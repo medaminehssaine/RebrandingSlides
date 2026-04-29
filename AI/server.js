@@ -95,9 +95,12 @@ app.get('/api/health', (req, res) => {
 
 function findTemplatePath() {
   const candidates = ['Template So Far.pptx', 'Template_So_Far.pptx', 'charte Ascence Avisory(2).pptx'];
+  const roots = [...new Set([__dirname, process.cwd()])];
   for (const name of candidates) {
-    const fullPath = path.join(__dirname, name);
-    if (fs.existsSync(fullPath)) return fullPath;
+    for (const root of roots) {
+      const fullPath = path.join(root, name);
+      if (fs.existsSync(fullPath)) return fullPath;
+    }
   }
   return null;
 }

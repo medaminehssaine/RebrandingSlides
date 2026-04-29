@@ -6,6 +6,12 @@
       "use": "@vercel/node"
     }
   ],
+  "functions": {
+    "server.js": {
+      "includeFiles": "Template So Far.pptx",
+      "maxDuration": 60
+    }
+  },
   "routes": [
     {
       "src": "/(.*)",
