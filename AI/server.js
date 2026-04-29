@@ -34,7 +34,7 @@ app.post('/api/process', upload.single('file'), async (req, res) => {
     const state = await analyzePresentation({
       slides,
       description: req.body.description || '',
-      mode: 'equilibre',
+      mode: req.body.mode || 'detaille',
       franceDate: getFranceDateContext(),
       templateReferences
     });

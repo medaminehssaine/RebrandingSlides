@@ -2,7 +2,8 @@
 
 const OpenAI = require('openai');
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1';
+const MAX_OUTPUT_TOKENS = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 32000);
 
 function client() {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY est manquante dans .env.');
@@ -18,6 +19,7 @@ async function analyzePresentation({ slides, description, templateReferences, mo
         content: [
           `Mode de densité demandé: ${modeInstruction(mode)}`,
           `Date actuelle en France au moment de la génération: ${franceDate || franceDateString()}`,
+          `Nombre de slides source extraites: ${slides.length}. Tu dois conserver la couverture complete du deck, sans resume global.`,
           `Description optionnelle utilisateur:\n${description || '(aucune)'}`,
           `Texte extrait des slides source:\n${JSON.stringify(slides, null, 2)}`,
           `Nombre de slides dans le template de référence: ${templateReferences.length}.`
@@ -71,6 +73,7 @@ async function completeJson(messages) {
   const response = await client().chat.completions.create({
     model: MODEL,
     temperature: 0.25,
+    max_tokens: MAX_OUTPUT_TOKENS,
     response_format: { type: 'json_object' },
     messages
   });
@@ -182,6 +185,13 @@ Modèle C, liste en lignes:
 
 CHOIX STRUCTURE:
 - Crée 2 à 4 sections maximum, car l’agenda du template a quatre lignes visibles.
+- Attention: les 2 à 4 sections sont uniquement des regroupements agenda. Elles peuvent contenir beaucoup de slides.
+- Ne résume jamais plusieurs slides source en une seule slide de contenu.
+- Pour chaque slide source lisible après la slide 1, crée exactement une slide de contenu dans le JSON.
+- Conserve le champ originalSlideIndex pour chaque slide de contenu. Il doit correspondre au slideIndex source.
+- Si le deck source contient 58 slides et que la première est une page de titre, retourne environ 57 slides de contenu, réparties dans les sections.
+- Les slides pauvres, de transition ou très courtes doivent quand même devenir une slide de contenu utile, enrichie avec le contexte voisin si nécessaire.
+- Ne fusionne pas, ne saute pas et ne condense pas les slides pour raccourcir la réponse.
 - Chaque section doit contenir au moins une slide de contenu.
 - Choisis A, B ou C selon la forme du contenu, pas au hasard.
 - Si tu choisis C, fournis toujours 4 lignes complètes.
@@ -191,8 +201,8 @@ CHOIX STRUCTURE:
 
 function modeInstruction(mode) {
   const modes = {
-    detaille: 'Plus détaillé, préserver toutes les idées source et ajouter des précisions utiles si le template a de la place. Cible 115 à 130 pour cent du volume source.',
-    equilibre: 'Équilibré, garder un volume très proche de la source et remplir proprement le template. Cible 90 à 110 pour cent du volume source.',
+    detaille: 'Plus détaillé, préserver toutes les idées source slide par slide. Cible 110 à 125 pour cent du volume de chaque slide source, sans fusion entre slides.',
+    equilibre: 'Équilibré, garder un volume très proche de chaque slide source et remplir proprement le template. Cible 95 à 115 pour cent par slide.',
     bref: 'Plus bref, garder les points les plus forts tout en préservant le sens. Cible 70 à 85 pour cent du volume source.',
     concis: 'Très concis, phrases courtes, aucun remplissage, claims précis. Cible 55 à 70 pour cent du volume source.'
   };
@@ -211,15 +221,17 @@ function sanitizePresentation(result, sourceSlides) {
   const sections = Array.isArray(clean.sections) && clean.sections.length
     ? clean.sections.slice(0, 4)
     : fallbackSections(sourceSlides);
+  const normalizedSections = ensureSourceCoverage(sections.map((section, sectionIndex) => ({
+    name: fitText(section.name || `Section ${sectionIndex + 1}`, 42, 6),
+    slides: normalizeSlides(section.slides || [], sourceSlides)
+  })).filter(section => section.slides.length), sourceSlides);
+
   return {
     title: fitText(clean.title || firstWords(sourceSlides[0]?.rawText, 8) || 'ASCENCE ADVISORY', 70, 9),
     subtitle: fitText(clean.subtitle || 'Présentation rebrandée', 70, 10),
     subsubtitle: fitText(clean.subsubtitle || clean['sub-subtitle'] || 'Synthèse de travail', 80, 12),
     date: clean.date || franceDateString('month'),
-    sections: sections.map((section, sectionIndex) => ({
-      name: fitText(section.name || `Section ${sectionIndex + 1}`, 42, 6),
-      slides: normalizeSlides(section.slides || [], sourceSlides)
-    })).filter(section => section.slides.length),
+    sections: normalizedSections,
     closingTagline: clean.closingTagline || 'ASCENCE ADVISORY'
   };
 }
@@ -234,7 +246,7 @@ function sanitizeSlide(result, originalSlide, requestedLayout) {
 }
 
 function normalizeSlides(slides, sourceSlides) {
-  if (!slides.length) return fallbackSections(sourceSlides)[0].slides;
+  if (!slides.length) return [];
   return slides.map(slide => {
     const layout = ['A', 'B', 'C'].includes(slide.layout) ? slide.layout : 'C';
     return {
@@ -243,6 +255,41 @@ function normalizeSlides(slides, sourceSlides) {
       content: normalizeContent(layout, slide.content || {})
     };
   });
+}
+
+function ensureSourceCoverage(sections, sourceSlides) {
+  const sourceContent = getSourceContentSlides(sourceSlides);
+  if (!sourceContent.length) return sections;
+
+  const generatedSlides = sections.flatMap(section => section.slides || []);
+  const indexed = new Set(generatedSlides.map(slide => Number(slide.originalSlideIndex)).filter(Boolean));
+  if (!indexed.size && generatedSlides.length >= sourceContent.length) return sections;
+
+  const missing = sourceContent.filter(slide => !indexed.has(Number(slide.slideIndex)));
+  if (!missing.length) return sections;
+
+  const targetSections = sections.length ? sections : [{ name: 'Contenu source', slides: [] }];
+  const target = targetSections[targetSections.length - 1];
+  missing.forEach(slide => target.slides.push(fallbackSlide(slide)));
+  return targetSections.slice(0, 4);
+}
+
+function getSourceContentSlides(sourceSlides) {
+  return (sourceSlides || [])
+    .slice(1)
+    .filter(slide => String(slide.rawText || '').trim());
+}
+
+function fallbackSlide(slide) {
+  return {
+    originalSlideIndex: slide.slideIndex,
+    layout: 'C',
+    content: normalizeContent('C', {
+      title: firstWords(slide.rawText, 8) || `Slide ${slide.slideIndex}`,
+      subtitle: 'Points clÃ©s',
+      rows: chunkText(slide.rawText).map(text => ({ icon: 'â€¢', text }))
+    })
+  };
 }
 
 function normalizeContent(layout, content) {
@@ -287,7 +334,7 @@ function normalizeContent(layout, content) {
 }
 
 function fallbackSections(sourceSlides) {
-  const contentSlides = sourceSlides.slice(1).filter(slide => slide.rawText).slice(0, 12);
+  const contentSlides = getSourceContentSlides(sourceSlides);
   return [{
     name: 'Synthèse',
     slides: contentSlides.map(slide => ({
