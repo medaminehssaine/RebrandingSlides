@@ -155,17 +155,20 @@ function renderContentSlide(xml, shapes, slide) {
   }
 
   const map = mapLayoutCShapes(shapes);
-  const paragraph = fitTextForPptx(removeEmoji(content.paragraph || rowsToParagraph(content.rows) || defaultParagraph()), 360, 58);
-  const paragraphSize = oneAxisFontSize(paragraph);
   xml = injectTextPreserve(xml, map.title.id, [removeEmoji(fitTitleForPptx(content.title, 48, 7))]);
   if (map.subtitle) xml = injectTextPreserve(xml, map.subtitle.id, [removeEmoji(fitTitleForPptx(content.subtitle || '', 32, 4))]);
   const paragraphShapes = map.paragraphShapes.length ? map.paragraphShapes : [map.subtitle].filter(Boolean);
   if (!paragraphShapes.length) return xml;
-  if (paragraphShapes.length > 1) xml = stretchShapeLike(xml, paragraphShapes[0].id, paragraphShapes);
-  xml = injectTextPreserve(xml, paragraphShapes[0].id, [paragraph]);
-  xml = setShapeTextSize(xml, paragraphShapes[0].id, paragraphSize);
-  paragraphShapes.slice(1).forEach(row => {
-    xml = injectTextPreserve(xml, row.id, ['']);
+  const rows = normalizeOneAxisRowsForPptx(content, paragraphShapes.length);
+  if (paragraphShapes.length === 1) {
+    const paragraph = rowsToParagraph(rows);
+    xml = injectTextPreserve(xml, paragraphShapes[0].id, [paragraph]);
+    xml = setShapeTextSize(xml, paragraphShapes[0].id, oneAxisFontSize(paragraph));
+    return xml;
+  }
+  paragraphShapes.forEach((shape, index) => {
+    xml = injectTextPreserve(xml, shape.id, [rows[index] || '']);
+    xml = setShapeTextSize(xml, shape.id, oneAxisRowFontSize(rows[index] || ''));
   });
   return xml;
 }
@@ -400,6 +403,29 @@ function defaultParagraph() {
   return 'Le sujet est présenté comme un axe unique, avec les principaux constats, les implications opérationnelles et les priorités à traiter dans une formulation continue.';
 }
 
+function normalizeOneAxisRowsForPptx(content, count) {
+  const sourceRows = Array.isArray(content.rows) && content.rows.length
+    ? content.rows.map(row => typeof row === 'string' ? row : row?.text)
+    : chunkTextForRows(content.paragraph || defaultParagraph(), Math.max(3, Math.min(count, 4)));
+  const rows = sourceRows
+    .map(row => fitOneAxisRow(removeEmoji(row)))
+    .filter(Boolean);
+  while (rows.length < Math.min(3, count)) rows.push(fitOneAxisRow(defaultRow(rows.length)));
+  return rows.slice(0, count);
+}
+
+function fitOneAxisRow(value) {
+  return fitTextForPptx(value, 170, 26);
+}
+
+function oneAxisRowFontSize(text) {
+  const chars = String(text || '').length;
+  if (chars <= 95) return '1800';
+  if (chars <= 130) return '1700';
+  if (chars <= 155) return '1600';
+  return '1500';
+}
+
 function oneAxisFontSize(text) {
   const words = String(text || '').split(/\s+/).filter(Boolean).length;
   const chars = String(text || '').length;
@@ -407,6 +433,17 @@ function oneAxisFontSize(text) {
   if (words <= 44 && chars <= 290) return '1600';
   if (words <= 52 && chars <= 330) return '1500';
   return '1400';
+}
+
+function chunkTextForRows(text, count) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return [0, 1, 2, 3].map(defaultRow);
+  const size = Math.max(12, Math.ceil(words.length / count));
+  const rows = [];
+  for (let index = 0; index < words.length && rows.length < count; index += size) {
+    rows.push(words.slice(index, index + size).join(' '));
+  }
+  return rows;
 }
 
 function bridgeFromColumns(columns) {
@@ -429,7 +466,7 @@ function normalizeCardColumnForPptx(column) {
   return {
     ...column,
     header: fitTitleForPptx(column?.header || '', 26, 4),
-    body: fitTextForPptx(column?.body || '', 135, 22)
+    body: fitTextForPptx(column?.body || '', 170, 28)
   };
 }
 

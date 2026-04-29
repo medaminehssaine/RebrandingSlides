@@ -911,8 +911,8 @@
         <label>Modèle</label>
         <select id="layoutSelect">
           <option value="A" ${slide.layout === 'A' ? 'selected' : ''}>A - Deux colonnes</option>
-          <option value="B" ${slide.layout === 'B' ? 'selected' : ''}>B - Trois cartes</option>
-          <option value="C" ${slide.layout === 'C' ? 'selected' : ''}>C - Liste en lignes</option>
+          <option value="B" ${slide.layout === 'B' ? 'selected' : ''}>B - Trois axes</option>
+          <option value="C" ${slide.layout === 'C' ? 'selected' : ''}>C - Un axe</option>
         </select>
         <div id="layoutFields"></div>`;
       document.getElementById('layoutSelect').addEventListener('change', event => {
@@ -942,9 +942,12 @@
           container.innerHTML += `<div class="field-row">${field(`Colonne ${index + 1} - Titre`, `content.columns.${index}.header`, column.header, false)}${field(`Colonne ${index + 1} - Texte`, `content.columns.${index}.body`, column.body)}</div>`;
         });
       } else {
+        const rows = ensure(slide.content.rows, 4);
         container.innerHTML = field('Titre', 'content.title', slide.content.title)
-          + field('Sous-titre', 'content.subtitle', slide.content.subtitle)
-          + field('Paragraphe continu', 'content.paragraph', slide.content.paragraph || rowsToParagraph(slide.content.rows));
+          + field('Sous-titre', 'content.subtitle', slide.content.subtitle);
+        rows.forEach((row, index) => {
+          container.innerHTML += field(`Ligne ${index + 1}`, `content.rows.${index}.text`, row.text || '');
+        });
       }
       bindContentFields(slide);
     }
@@ -993,7 +996,7 @@
       if (slide.layout === 'B') {
         return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><div class="mini-cols">${ensure(c.columns, 3).map(col => `<div class="mini-box"><strong>${escapeHtml(col.header || '')}</strong><p>${escapeHtml(col.body || '')}</p></div>`).join('')}</div></div>`;
       }
-      return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><p>${escapeHtml(c.subtitle || '')}</p><p>${escapeHtml(c.paragraph || rowsToParagraph(c.rows))}</p></div>`;
+      return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><p>${escapeHtml(c.subtitle || '')}</p>${ensure(c.rows, 4).map(row => `<p>${escapeHtml(row.text || '')}</p>`).join('')}</div>`;
     }
 
     function getActive() {
@@ -1023,7 +1026,7 @@
       if (to === 'B') {
         return { title, columns: [0, 1, 2].map(i => ({ header: lines[i] || `Thème ${i + 1}`, body: lines[i + 3] || '' })) };
       }
-      return { title, subtitle: lines[0] || '', paragraph: lines.slice(1).join(' ') || lines[0] || '' };
+      return { title, subtitle: lines[0] || '', rows: [0, 1, 2, 3].map(i => ({ text: lines[i + 1] || '' })).filter((row, index) => row.text || index < 3) };
     }
 
     function rowsToParagraph(rows) {

@@ -150,7 +150,8 @@ async function generateMappedSlideBatch({ batch, allSlides, sectionBySlideIndex,
         content: [
           'Tu reformules uniquement les slides source listées dans "slides_a_generer".',
           'RÈGLE ABSOLUE: une slide source = une slide JSON de sortie. Ne fusionne jamais deux slides. Ne crée jamais une slide pour un autre slideIndex.',
-          'Favorise le modèle C, un axe en paragraphe, dès que le contenu peut être expliqué proprement en un bloc continu.',
+          'Favorise le modèle B dès que la slide source contient trois axes, trois leviers, trois phases ou trois blocs parallèles.',
+          'Utilise le modèle C pour les slides à un axe principal, sous forme de lignes structurées sans emoji.',
           'Pour une slide longue, compresse seulement cette slide dans le template. N’utilise les voisines que pour clarifier le vocabulaire, jamais pour ajouter des faits absents.',
           'Retourne uniquement ce JSON: {"slides":[{"originalSlideIndex":2,"layout":"A|B|C","content":{...}}]}.',
           `Mode de densité: ${modeInstruction(mode)}`,
@@ -229,7 +230,7 @@ RÈGLES CRITIQUES DE FIT TEMPLATE:
 - Supprime les doublons et le remplissage, mais ne supprime pas les idées substantielles.
 - Si une slide source est pauvre, enrichis prudemment avec le contexte et les slides voisines.
 - Si une slide source est dense, répartis les détails dans les champs exacts du template.
-- Pour les slides longues ou narratives, préfère le modèle C afin de conserver un bloc explicatif fidèle sans inventer de structure artificielle.
+- Pour les slides longues ou narratives, préfère le modèle C afin de conserver un axe principal fidèle avec des lignes structurées.
 
 LIMITES VISUELLES STRICTES:
 - Tous les titres visibles doivent tenir sur une seule ligne dans le template. Reformule court, jamais de titre sur deux lignes.
@@ -276,25 +277,27 @@ Modèle A, deux axes:
 - À utiliser pour comparaison, deux axes, diagnostic vs cible, risques vs actions, transformation vs fidélisation.
 - Ne choisis A que si la slide source contient explicitement deux axes naturels. Sinon utilise C.
 
-Modèle B, trois cartes:
+Modèle B, trois axes:
 { "title": "...", "columns": [{ "header": "...", "body": "..." }, { "header": "...", "body": "..." }, { "header": "...", "body": "..." }] }
 - Exactement 3 colonnes.
 - Title: 26 à 48 caractères, une seule ligne.
 - Header: 2 à 4 mots, 26 caractères maximum.
-- Body: 14 à 22 mots, 135 caractères maximum, paragraphe compact.
-- À utiliser pour trois piliers, trois leviers, trois phases, trois options ou trois constats.
-- Ne choisis B que si la slide source contient clairement trois items parallèles.
+- Body: 18 à 28 mots, 170 caractères maximum, paragraphe compact.
+- À utiliser dès que la slide source contient trois axes, trois piliers, trois leviers, trois phases, trois options, trois constats ou trois blocs parallèles.
+- Choisis B même si les trois axes sont implicites mais clairement séparables.
 
-Modèle C, un axe en paragraphe:
-{ "title": "...", "subtitle": "...", "paragraph": "..." }
-- Ce modèle remplace l’ancienne liste en lignes par un seul grand bloc de texte continu.
+Modèle C, un axe sans emoji:
+{ "title": "...", "subtitle": "...", "rows": [{ "text": "..." }, { "text": "..." }, { "text": "..." }, { "text": "..." }] }
+- Ce modèle utilise le template one axe sans emoji: un titre, un sous-titre, puis 3 à 4 lignes structurées.
 - Title: 26 à 48 caractères, une seule ligne.
 - Subtitle: 2 à 4 mots, 32 caractères maximum, pas une phrase longue.
-- Paragraph: 34 à 58 mots, 360 caractères maximum, une seule idée structurée en prose fluide.
-- Le paragraphe doit être continu, sans bullets, sans liste numérotée et sans retours à la ligne.
+- Rows: exactement 4 lignes quand la source contient assez de matière, sinon 3 lignes minimum.
+- Chaque ligne commence par un label court suivi de deux-points, puis une phrase explicative.
+- Chaque ligne: 16 à 26 mots, 170 caractères maximum.
+- Le label avant deux-points: 1 à 3 mots, 24 caractères maximum.
 - N’utilise jamais d’emoji, pictogramme ou symbole décoratif dans ce modèle.
 - À utiliser pour un axe unique, un constat dense, une explication narrative, une synthèse opérationnelle ou une slide qui ne se divise pas naturellement.
-- C est le modèle par défaut à privilégier pour la majorité des slides.
+- C est le modèle par défaut pour les slides qui n’ont pas trois axes et pas deux axes explicites.
 
 CHOIX STRUCTURE:
 - Crée 2 à 4 sections maximum, car l’agenda du template a quatre lignes visibles.
@@ -307,8 +310,8 @@ CHOIX STRUCTURE:
 - Ne fusionne pas, ne saute pas et ne condense pas les slides pour raccourcir la réponse.
 - Chaque section doit contenir au moins une slide de contenu.
 - Choisis A, B ou C selon la forme du contenu, pas au hasard.
-- Favorise C pour la plupart des slides. Utilise A seulement pour deux axes explicites et B seulement pour trois items parallèles.
-- Si tu choisis C, fournis toujours un paragraphe complet, jamais des lignes séparées.
+- Utilise B plus souvent dès qu’il y a trois axes ou trois blocs parallèles. Utilise A seulement pour deux axes explicites. Utilise C pour un axe principal.
+- Si tu choisis C, fournis toujours 3 à 4 lignes complètes, jamais d’emoji.
 - Ne rends jamais des champs vides sous prétexte que le contenu source est court.
 `.trim();
 }
@@ -502,7 +505,12 @@ function chooseLayoutForSource(text) {
   const source = String(text || '').toLowerCase();
   if (/\b(vs|versus|comparaison|compare|d'un côté|de l'autre|actuel.+cible|risques?.+actions?|diagnostic.+cible)\b/.test(source)) return 'A';
   const bullets = (source.match(/[•\-]\s|\n\d+[.)]/g) || []).length;
-  if (bullets === 3 || /\b(trois|3|troisième|piliers|leviers|options|phases)\b/.test(source)) return 'B';
+  const separators = (source.match(/\n|;|•| - /g) || []).length;
+  if (
+    bullets >= 3 ||
+    separators >= 3 ||
+    /\b(trois|3|troisième|piliers|leviers|options|phases|axes|chantiers|volets|dimensions|étapes|etapes)\b/.test(source)
+  ) return 'B';
   return 'C';
 }
 
@@ -569,16 +577,25 @@ function normalizeContent(layout, content) {
       title: fitTitle(clean.title || 'Trois leviers clés à activer', 48, 7),
       columns: columns.map((column, index) => ({
         header: fitText(nonEmpty(column.header, `Levier ${index + 1}`), 26, 4),
-        body: fitSentence(nonEmpty(column.body, 'Ce levier précise les actions à engager, les responsabilités à clarifier et les effets attendus.'), 135, 22)
+        body: fitSentence(nonEmpty(column.body, 'Ce levier précise les actions à engager, les responsabilités à clarifier et les effets attendus.'), 170, 28)
       }))
     };
   }
-  const paragraph = clean.paragraph || rowsToParagraph(clean.rows);
+  const rows = normalizeOneAxisRows(clean.rows, clean.paragraph);
   return {
     title: fitTitle(clean.title || 'Plan d’action opérationnel', 48, 7),
     subtitle: fitText(clean.subtitle || 'Méthode cible', 32, 4),
-    paragraph: fitParagraph(removeEmoji(nonEmpty(paragraph, paragraphFromText(defaultRows().join(' ')))), 360, 58)
+    rows
   };
+}
+
+function normalizeOneAxisRows(rows, paragraph) {
+  const sourceRows = Array.isArray(rows) && rows.length
+    ? rows.map(row => typeof row === 'string' ? row : row?.text)
+    : chunkText(paragraph || defaultRows().join(' '));
+  const filled = sourceRows.map(row => fitRow(ensureColon(removeEmoji(row)))).filter(Boolean);
+  while (filled.length < 3) filled.push(defaultRows()[filled.length]);
+  return filled.slice(0, 4).map(text => ({ text }));
 }
 
 function fallbackSections(sourceSlides) {
