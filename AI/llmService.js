@@ -14,6 +14,7 @@ function client() {
 
 async function analyzePresentation({ slides, description, templateReferences, mode = 'equilibre', franceDate = '' }) {
   const franceDateValue = franceDate || franceDateString();
+  const today = franceDateString();
   const sourceContent = getSourceContentSlides(slides);
   const deckPlan = await planDeckEnvelope({ slides, description, templateReferences, franceDate: franceDateValue });
   const skeleton = buildSectionSkeleton(deckPlan, sourceContent);
@@ -45,7 +46,7 @@ async function analyzePresentation({ slides, description, templateReferences, mo
     title: deckPlan.title,
     subtitle: deckPlan.subtitle,
     subsubtitle: deckPlan.subsubtitle,
-    date: deckPlan.date,
+    date: today,
     sections,
     closingTagline: deckPlan.closingTagline
   }, slides);
@@ -60,7 +61,7 @@ async function regenerateSlide({ slide, layout, mode = 'equilibre', franceDate =
         content: [
           `Régénère uniquement cette slide de contenu dans le modèle ${layout}.`,
           `Mode de densité: ${modeInstruction(mode)}`,
-          `Date actuelle en France: ${franceDate || franceDateString()}`,
+          `Date actuelle en France: ${franceDate || franceDateString()}. Cette date est obligatoire pour le champ "date", même si le deck source contient une autre date.`,
           'Retourne uniquement ce JSON: {"layout":"A|B|C","content":{...}}.',
           'Respecte exactement les nombres de champs du template. Aucun champ visible ne doit être vide.',
           JSON.stringify(slide, null, 2)
@@ -149,6 +150,7 @@ async function generateMappedSlideBatch({ batch, allSlides, sectionBySlideIndex,
         content: [
           'Tu reformules uniquement les slides source listées dans "slides_a_generer".',
           'RÈGLE ABSOLUE: une slide source = une slide JSON de sortie. Ne fusionne jamais deux slides. Ne crée jamais une slide pour un autre slideIndex.',
+          'Favorise le modèle C, un axe en paragraphe, dès que le contenu peut être expliqué proprement en un bloc continu.',
           'Pour une slide longue, compresse seulement cette slide dans le template. N’utilise les voisines que pour clarifier le vocabulaire, jamais pour ajouter des faits absents.',
           'Retourne uniquement ce JSON: {"slides":[{"originalSlideIndex":2,"layout":"A|B|C","content":{...}}]}.',
           `Mode de densité: ${modeInstruction(mode)}`,
@@ -197,7 +199,7 @@ Contraintes:
 - subsubtitle: maximum 56 caractères et 8 mots.
 - section name: 14 à 34 caractères, maximum 5 mots.
 - Crée 2 à 4 sections maximum.
-- Utilise la date actuelle en France si le deck ne contient pas une date explicite plus pertinente.
+- Utilise toujours la date actuelle en France pour le champ date. Ignore les dates présentes dans le deck source.
 `.trim();
 }
 
@@ -213,8 +215,9 @@ LANGUE:
 - Si le deck source est majoritairement dans une autre langue, conserve cette langue.
 
 DATE:
-- Utilise la date actuelle en France fournie dans le message utilisateur pour le champ "date", sauf si le deck source impose explicitement une autre date.
-- Le champ date doit être court et lisible, par exemple "Avril 2026" ou "29 avril 2026", selon le niveau de précision du deck source.
+- Utilise toujours la date actuelle en France fournie dans le message utilisateur pour le champ "date".
+- Ignore les dates visibles dans le deck source. Elles ne doivent pas remplacer la date de génération.
+- Le champ date doit être court et lisible, au format "29 avril 2026".
 
 RÈGLES CRITIQUES DE FIT TEMPLATE:
 - Le contenu sera injecté dans le fichier réel "Template So Far.pptx", dans ses vrais emplacements fixes.
@@ -226,6 +229,7 @@ RÈGLES CRITIQUES DE FIT TEMPLATE:
 - Supprime les doublons et le remplissage, mais ne supprime pas les idées substantielles.
 - Si une slide source est pauvre, enrichis prudemment avec le contexte et les slides voisines.
 - Si une slide source est dense, répartis les détails dans les champs exacts du template.
+- Pour les slides longues ou narratives, préfère le modèle C afin de conserver un bloc explicatif fidèle sans inventer de structure artificielle.
 
 LIMITES VISUELLES STRICTES:
 - Tous les titres visibles doivent tenir sur une seule ligne dans le template. Reformule court, jamais de titre sur deux lignes.
@@ -263,14 +267,14 @@ Modèle A, deux axes:
 - Exactement 2 colonnes.
 - Ce modèle correspond à la slide template avec deux axes latéraux et un court paragraphe central.
 - Title: 26 à 48 caractères, une seule ligne.
-- Bridge: 12 à 18 mots, une phrase de synthèse située au centre. Elle explique le lien entre les deux axes sans répéter les intros.
+- Bridge: 14 à 20 mots, une phrase de synthèse située au centre. Elle explique le lien entre les deux axes sans répéter les intros.
 - Label: 1 à 2 mots, en MAJUSCULES, 14 caractères maximum, sans ponctuation.
-- Intro: 18 à 26 mots, une phrase détaillée mais compacte, 165 caractères maximum. Elle doit contextualiser l’axe, pas seulement annoncer un thème.
+- Intro: 26 à 38 mots, une phrase détaillée mais compacte, 240 caractères maximum. Elle doit contextualiser l’axe, pas seulement annoncer un thème.
 - Exactement 3 bullets par colonne.
-- Bullet: 5 à 9 mots, 58 caractères maximum, concret, sans point final.
+- Bullet: 7 à 12 mots, 80 caractères maximum, concret, sans point final.
 - Keywords: exactement 2 à 3 mots ou courtes expressions par axe. Chaque keyword doit apparaître tel quel dans l’intro ou les bullets du même axe. Ces keywords seront mis en gras dans PowerPoint.
 - À utiliser pour comparaison, deux axes, diagnostic vs cible, risques vs actions, transformation vs fidélisation.
-- Ne choisis pas A si le contenu n’a pas deux axes naturels. Utilise B ou C à la place.
+- Ne choisis A que si la slide source contient explicitement deux axes naturels. Sinon utilise C.
 
 Modèle B, trois cartes:
 { "title": "...", "columns": [{ "header": "...", "body": "..." }, { "header": "...", "body": "..." }, { "header": "...", "body": "..." }] }
@@ -279,6 +283,7 @@ Modèle B, trois cartes:
 - Header: 2 à 4 mots, 26 caractères maximum.
 - Body: 14 à 22 mots, 135 caractères maximum, paragraphe compact.
 - À utiliser pour trois piliers, trois leviers, trois phases, trois options ou trois constats.
+- Ne choisis B que si la slide source contient clairement trois items parallèles.
 
 Modèle C, un axe en paragraphe:
 { "title": "...", "subtitle": "...", "paragraph": "..." }
@@ -289,6 +294,7 @@ Modèle C, un axe en paragraphe:
 - Le paragraphe doit être continu, sans bullets, sans liste numérotée et sans retours à la ligne.
 - Tu peux inclure un seul emoji si cela aide vraiment le sens ou la lisibilité, sinon aucun emoji.
 - À utiliser pour un axe unique, un constat dense, une explication narrative, une synthèse opérationnelle ou une slide qui ne se divise pas naturellement.
+- C est le modèle par défaut à privilégier pour la majorité des slides.
 
 CHOIX STRUCTURE:
 - Crée 2 à 4 sections maximum, car l’agenda du template a quatre lignes visibles.
@@ -301,6 +307,7 @@ CHOIX STRUCTURE:
 - Ne fusionne pas, ne saute pas et ne condense pas les slides pour raccourcir la réponse.
 - Chaque section doit contenir au moins une slide de contenu.
 - Choisis A, B ou C selon la forme du contenu, pas au hasard.
+- Favorise C pour la plupart des slides. Utilise A seulement pour deux axes explicites et B seulement pour trois items parallèles.
 - Si tu choisis C, fournis toujours un paragraphe complet, jamais des lignes séparées.
 - Ne rends jamais des champs vides sous prétexte que le contenu source est court.
 `.trim();
@@ -337,7 +344,7 @@ function sanitizePresentation(result, sourceSlides) {
     title: fitTitle(clean.title || firstWords(sourceSlides[0]?.rawText, 8) || 'ASCENCE ADVISORY', 52, 7),
     subtitle: fitTitle(clean.subtitle || 'Présentation rebrandée', 48, 7),
     subsubtitle: fitTitle(clean.subsubtitle || clean['sub-subtitle'] || 'Synthèse de travail', 56, 8),
-    date: clean.date || franceDateString('month'),
+    date: franceDateString(),
     sections: normalizedSections,
     closingTagline: clean.closingTagline || 'ASCENCE ADVISORY'
   };
@@ -493,9 +500,9 @@ function neighborContext(batch, allSlides) {
 
 function chooseLayoutForSource(text) {
   const source = String(text || '').toLowerCase();
-  if (/\b(vs|versus|compare|comparaison|axe|axes|actuel|cible|risque|action)\b/.test(source)) return 'A';
+  if (/\b(vs|versus|comparaison|compare|d'un côté|de l'autre|actuel.+cible|risques?.+actions?|diagnostic.+cible)\b/.test(source)) return 'A';
   const bullets = (source.match(/[•\-]\s|\n\d+[.)]/g) || []).length;
-  if (bullets >= 3 || /\b(trois|3|piliers|leviers|options|phases)\b/.test(source)) return 'B';
+  if (bullets === 3 || /\b(trois|3|troisième|piliers|leviers|options|phases)\b/.test(source)) return 'B';
   return 'C';
 }
 
@@ -544,13 +551,13 @@ function normalizeContent(layout, content) {
     while (columns.length < 2) columns.push({});
     return {
       title: fitTitle(clean.title || 'Analyse structurée des priorités clés', 48, 7),
-      bridge: fitSentence(clean.bridge || 'Ces deux axes structurent les priorités de transformation et orientent les décisions opérationnelles à engager.', 125, 18),
+      bridge: fitSentence(clean.bridge || 'Ces deux axes structurent les priorités de transformation et orientent les décisions opérationnelles à engager.', 140, 20),
       columns: columns.map((column, index) => ({
         label: fitLabel(nonEmpty(column.label, index === 0 ? 'AXE UN' : 'AXE DEUX')),
-        intro: fitSentence(nonEmpty(column.intro, 'Cette dimension synthétise les constats, les implications opérationnelles et les décisions à sécuriser rapidement.'), 165, 26),
+        intro: fitSentence(nonEmpty(column.intro, 'Cette dimension synthétise les constats, les implications opérationnelles et les décisions à sécuriser rapidement.'), 240, 38),
         bullets: fillList(column.bullets, 3, ['Clarifier les priorités clés', 'Structurer les actions immédiates', 'Suivre les résultats attendus'])
           .slice(0, 3)
-          .map(item => fitText(item, 58, 9)),
+          .map(item => fitText(item, 80, 12)),
         keywords: normalizeKeywords(column.keywords, column, 3)
       }))
     };

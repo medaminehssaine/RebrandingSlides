@@ -136,9 +136,9 @@ function renderContentSlide(xml, shapes, slide) {
     const map = mapLayoutAShapes(shapes);
     xml = injectTextPreserve(xml, map.title.id, [fitTitleForPptx(content.title, 48, 7)]);
     xml = injectTextPreserve(xml, map.leftHeader.id, [columns[0].label || 'AXE']);
-    xml = injectAxisContentPreserve(xml, map.leftBody.id, columns[0]);
-    xml = injectTextPreserve(xml, map.bridge.id, [fitTextForPptx(content.bridge || bridgeFromColumns(columns), 125, 18)]);
-    xml = injectAxisContentPreserve(xml, map.rightBody.id, columns[1]);
+    xml = injectAxisContentPreserve(xml, map.leftBody.id, columns[0], '1200');
+    xml = injectTextPreserve(xml, map.bridge.id, [fitTextForPptx(content.bridge || bridgeFromColumns(columns), 140, 20)]);
+    xml = injectAxisContentPreserve(xml, map.rightBody.id, columns[1], '1200');
     xml = injectTextPreserve(xml, map.rightHeader.id, [columns[1].label || 'AXE']);
     return xml;
   }
@@ -157,10 +157,13 @@ function renderContentSlide(xml, shapes, slide) {
   const map = mapLayoutCShapes(shapes);
   const paragraph = fitTextForPptx(content.paragraph || rowsToParagraph(content.rows) || defaultParagraph(), 430, 70);
   xml = injectTextPreserve(xml, map.title.id, [fitTitleForPptx(content.title, 48, 7)]);
-  xml = injectTextPreserve(xml, map.subtitle.id, [fitTitleForPptx(content.subtitle || '', 32, 4)]);
-  xml = stretchShapeLike(xml, map.rows[0].id, map.rows);
-  xml = injectTextPreserve(xml, map.rows[0].id, [paragraph]);
-  map.rows.slice(1).forEach(row => {
+  if (map.subtitle) xml = injectTextPreserve(xml, map.subtitle.id, [fitTitleForPptx(content.subtitle || '', 32, 4)]);
+  const paragraphShapes = map.paragraphShapes.length ? map.paragraphShapes : [map.subtitle].filter(Boolean);
+  if (!paragraphShapes.length) return xml;
+  if (paragraphShapes.length > 1) xml = stretchShapeLike(xml, paragraphShapes[0].id, paragraphShapes);
+  xml = injectTextPreserve(xml, paragraphShapes[0].id, [paragraph]);
+  xml = setShapeTextSize(xml, paragraphShapes[0].id, '1300');
+  paragraphShapes.slice(1).forEach(row => {
     xml = injectTextPreserve(xml, row.id, ['']);
   });
   return xml;
@@ -186,10 +189,18 @@ function mapLayoutBShapes(shapes) {
 }
 
 function mapLayoutCShapes(shapes) {
+  const title = shapes[0];
+  const rest = shapes.slice(1);
+  const sortedByY = rest
+    .map(shape => ({ shape, box: shapeBox(shape) }))
+    .filter(item => item.box)
+    .sort((a, b) => a.box.y - b.box.y);
+  const subtitle = sortedByY[0]?.shape || shapes[5] || null;
+  const paragraphShapes = rest.filter(shape => !subtitle || shape.id !== subtitle.id);
   return {
-    title: shapes[0],
-    rows: [shapes[1], shapes[2], shapes[3], shapes[4]],
-    subtitle: shapes[5]
+    title,
+    subtitle,
+    paragraphShapes
   };
 }
 
@@ -217,16 +228,17 @@ function injectTextPreserve(xml, id, values, keywords = []) {
   });
 }
 
-function injectAxisContentPreserve(xml, id, column) {
+function injectAxisContentPreserve(xml, id, column, size) {
   const values = [column?.intro || '', ...ensureArray(column?.bullets, 3).slice(0, 3)];
   const keywords = ensureArray(column?.keywords, 0);
   return replaceShapeXml(xml, id, shapeXml => {
     let index = 0;
-    return shapeXml.replace(/<a:p\b[\s\S]*?<\/a:p>/g, paragraphXml => {
+    const replaced = shapeXml.replace(/<a:p\b[\s\S]*?<\/a:p>/g, paragraphXml => {
       const value = index < values.length ? values[index] : '';
       index += 1;
       return replaceParagraphText(paragraphXml, value, keywords);
     });
+    return size ? setRunSize(replaced, size) : replaced;
   });
 }
 
@@ -257,6 +269,14 @@ function shapeBox(shape) {
   const ext = (shape.xml.match(/<a:ext cx="([^"]+)" cy="([^"]+)"/) || []).slice(1).map(Number);
   if (off.length < 2 || ext.length < 2 || off.some(Number.isNaN) || ext.some(Number.isNaN)) return null;
   return { x: off[0], y: off[1], cx: ext[0], cy: ext[1] };
+}
+
+function setShapeTextSize(xml, id, size) {
+  return replaceShapeXml(xml, id, shapeXml => setRunSize(shapeXml, size));
+}
+
+function setRunSize(xml, size) {
+  return String(xml || '').replace(/\bsz="\d+"/g, `sz="${size}"`);
 }
 
 function replaceParagraphText(paragraphXml, value, keywords = []) {
@@ -389,8 +409,8 @@ function normalizeAxisColumnForPptx(column) {
   return {
     ...column,
     label: fitTitleForPptx(column?.label || 'AXE', 14, 2).replace(/[^\p{L}\p{N}\s]/gu, '').toUpperCase() || 'AXE',
-    intro: fitTextForPptx(column?.intro || '', 165, 26),
-    bullets: ensureArray(column?.bullets, 3).slice(0, 3).map(item => fitTextForPptx(item, 58, 9)),
+    intro: fitTextForPptx(column?.intro || '', 240, 38),
+    bullets: ensureArray(column?.bullets, 3).slice(0, 3).map(item => fitTextForPptx(item, 80, 12)),
     keywords: column?.keywords || []
   };
 }
