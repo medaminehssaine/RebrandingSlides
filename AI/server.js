@@ -116,8 +116,12 @@ function getFranceDateContext() {
   }).format(now);
 }
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`PPTX Rebrander running at http://localhost:${port}`);
-  console.log(templatePath ? `Template loaded: ${path.basename(templatePath)}` : 'Template file not found, using coded Ascence style.');
-});
+if (!process.env.VERCEL) {
+  const port = process.env.PORT || 3000;
+  app.listen(port, () => {
+    console.log(`PPTX Rebrander running at http://localhost:${port}`);
+    console.log(templatePath ? `Template loaded: ${path.basename(templatePath)}` : 'Template file not found, using coded Ascence style.');
+  });
+}
+
+module.exports = app;
