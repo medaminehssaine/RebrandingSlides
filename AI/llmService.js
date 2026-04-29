@@ -4,6 +4,8 @@ const OpenAI = require('openai');
 
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1';
 const MAX_OUTPUT_TOKENS = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 32000);
+const SLIDE_BATCH_SIZE = Number(process.env.OPENAI_SLIDE_BATCH_SIZE || 2);
+const SLIDE_BATCH_CONCURRENCY = Number(process.env.OPENAI_SLIDE_BATCH_CONCURRENCY || 2);
 
 function client() {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY est manquante dans .env.');
@@ -11,23 +13,42 @@ function client() {
 }
 
 async function analyzePresentation({ slides, description, templateReferences, mode = 'equilibre', franceDate = '' }) {
-  return withJsonRetry(async () => {
-    const result = await completeJson([
-      { role: 'system', content: buildSystemPrompt() },
-      {
-        role: 'user',
-        content: [
-          `Mode de densité demandé: ${modeInstruction(mode)}`,
-          `Date actuelle en France au moment de la génération: ${franceDate || franceDateString()}`,
-          `Nombre de slides source extraites: ${slides.length}. Tu dois conserver la couverture complète du deck, sans résumé global.`,
-          `Description optionnelle utilisateur:\n${description || '(aucune)'}`,
-          `Texte extrait des slides source:\n${JSON.stringify(slides, null, 2)}`,
-          `Nombre de slides dans le template de référence: ${templateReferences.length}.`
-        ].join('\n\n')
-      }
-    ]);
-    return sanitizePresentation(result, slides);
-  }, 'OpenAI a retourné un JSON invalide pendant l’analyse du deck.');
+  const franceDateValue = franceDate || franceDateString();
+  const sourceContent = getSourceContentSlides(slides);
+  const deckPlan = await planDeckEnvelope({ slides, description, templateReferences, franceDate: franceDateValue });
+  const skeleton = buildSectionSkeleton(deckPlan, sourceContent);
+  const sectionBySlideIndex = sectionLookup(skeleton.sections);
+  const batches = chunk(sourceContent, Math.max(1, SLIDE_BATCH_SIZE));
+
+  const mappedBatches = await mapLimit(batches, Math.max(1, SLIDE_BATCH_CONCURRENCY), async batch => {
+    return generateMappedSlideBatch({
+      batch,
+      allSlides: slides,
+      sectionBySlideIndex,
+      mode,
+      franceDate: franceDateValue,
+      description
+    });
+  });
+
+  const mappedSlides = mappedBatches.flat();
+  const mappedByIndex = new Map(mappedSlides.map(slide => [Number(slide.originalSlideIndex), slide]));
+  const sections = skeleton.sections.map(section => ({
+    name: section.name,
+    slides: section.slideIndexes.map(slideIndex => {
+      const sourceSlide = sourceContent.find(slide => Number(slide.slideIndex) === Number(slideIndex));
+      return mappedByIndex.get(Number(slideIndex)) || fallbackSlide(sourceSlide || { slideIndex, rawText: '' });
+    })
+  })).filter(section => section.slides.length);
+
+  return sanitizePresentation({
+    title: deckPlan.title,
+    subtitle: deckPlan.subtitle,
+    subsubtitle: deckPlan.subsubtitle,
+    date: deckPlan.date,
+    sections,
+    closingTagline: deckPlan.closingTagline
+  }, slides);
 }
 
 async function regenerateSlide({ slide, layout, mode = 'equilibre', franceDate = '' }) {
@@ -93,6 +114,91 @@ async function withJsonRetry(fn, message) {
       throw new Error(`${message} ${detail}`);
     }
   }
+}
+
+async function planDeckEnvelope({ slides, description, templateReferences, franceDate }) {
+  try {
+    return await withJsonRetry(async () => completeJson([
+      { role: 'system', content: buildDeckPlanPrompt() },
+      {
+        role: 'user',
+        content: [
+          `Date actuelle en France: ${franceDate || franceDateString()}`,
+          `Description optionnelle utilisateur:\n${description || '(aucune)'}`,
+          `Nombre de slides dans le template de référence: ${templateReferences.length}.`,
+          'Slides source à organiser. Utilise slideIndex pour construire les sections, sans reformuler le contenu slide par slide ici:',
+          JSON.stringify(slides.map(slide => ({
+            slideIndex: slide.slideIndex,
+            rawText: fitText(slide.rawText, 1200, 180)
+          })), null, 2)
+        ].join('\n\n')
+      }
+    ]), 'OpenAI a retourné un JSON invalide pendant la planification du deck.');
+  } catch (error) {
+    console.warn(error.message);
+    return fallbackDeckPlan(slides, franceDate);
+  }
+}
+
+async function generateMappedSlideBatch({ batch, allSlides, sectionBySlideIndex, mode, franceDate, description }) {
+  try {
+    const result = await withJsonRetry(async () => completeJson([
+      { role: 'system', content: buildSystemPrompt() },
+      {
+        role: 'user',
+        content: [
+          'Tu reformules uniquement les slides source listées dans "slides_a_generer".',
+          'RÈGLE ABSOLUE: une slide source = une slide JSON de sortie. Ne fusionne jamais deux slides. Ne crée jamais une slide pour un autre slideIndex.',
+          'Pour une slide longue, compresse seulement cette slide dans le template. N’utilise les voisines que pour clarifier le vocabulaire, jamais pour ajouter des faits absents.',
+          'Retourne uniquement ce JSON: {"slides":[{"originalSlideIndex":2,"layout":"A|B|C","content":{...}}]}.',
+          `Mode de densité: ${modeInstruction(mode)}`,
+          `Date actuelle en France: ${franceDate || franceDateString()}`,
+          `Description optionnelle utilisateur:\n${description || '(aucune)'}`,
+          `Sections cibles par slide:\n${JSON.stringify(Object.fromEntries(batch.map(slide => [slide.slideIndex, sectionBySlideIndex.get(Number(slide.slideIndex)) || 'Contenu'])), null, 2)}`,
+          `Contexte voisin:\n${JSON.stringify(neighborContext(batch, allSlides), null, 2)}`,
+          `slides_a_generer:\n${JSON.stringify(batch, null, 2)}`
+        ].join('\n\n')
+      }
+    ]), 'OpenAI a retourné un JSON invalide pendant la génération slide par slide.');
+    return sanitizeMappedBatch(result, batch);
+  } catch (error) {
+    console.warn(error.message);
+    return batch.map(fallbackSlide);
+  }
+}
+
+function buildDeckPlanPrompt() {
+  return `
+Tu planifies uniquement la structure globale d’un deck PowerPoint rebrandé.
+Retourne uniquement du JSON valide, sans prose, sans markdown.
+
+Objectif:
+- Déduire le titre, sous-titre, date et 2 à 4 sections d’agenda.
+- Assigner chaque slide source lisible après la slide 1 à une section.
+- Ne reformule pas encore le contenu détaillé des slides.
+- Ne supprime aucun slideIndex lisible et ne l’assigne pas deux fois.
+- L’agenda aura seulement les noms de sections, aucun numéro de page.
+
+JSON obligatoire:
+{
+  "title": "...",
+  "subtitle": "...",
+  "subsubtitle": "...",
+  "date": "...",
+  "sections": [
+    { "name": "Nom court", "slideIndexes": [2, 3, 4] }
+  ],
+  "closingTagline": "ASCENCE ADVISORY"
+}
+
+Contraintes:
+- title: maximum 52 caractères et 7 mots.
+- subtitle: maximum 48 caractères et 7 mots.
+- subsubtitle: maximum 56 caractères et 8 mots.
+- section name: 14 à 34 caractères, maximum 5 mots.
+- Crée 2 à 4 sections maximum.
+- Utilise la date actuelle en France si le deck ne contient pas une date explicite plus pertinente.
+`.trim();
 }
 
 function buildSystemPrompt() {
@@ -246,6 +352,24 @@ function sanitizeSlide(result, originalSlide, requestedLayout) {
   };
 }
 
+function sanitizeMappedBatch(result, sourceBatch) {
+  const generated = Array.isArray(result?.slides) ? result.slides : [];
+  return sourceBatch.map(sourceSlide => {
+    const match = generated.find(slide => Number(slide.originalSlideIndex) === Number(sourceSlide.slideIndex));
+    if (!match) return fallbackSlide(sourceSlide);
+    const requestedLayout = ['A', 'B', 'C'].includes(match.layout) ? match.layout : chooseLayoutForSource(sourceSlide.rawText);
+    return sanitizeSlide({
+      originalSlideIndex: sourceSlide.slideIndex,
+      layout: requestedLayout,
+      content: match.content || {}
+    }, {
+      originalSlideIndex: sourceSlide.slideIndex,
+      layout: requestedLayout,
+      content: {}
+    }, requestedLayout);
+  });
+}
+
 function normalizeSlides(slides, sourceSlides) {
   if (!slides.length) return [];
   return slides.map(slide => {
@@ -273,6 +397,126 @@ function ensureSourceCoverage(sections, sourceSlides) {
   const target = targetSections[targetSections.length - 1];
   missing.forEach(slide => target.slides.push(fallbackSlide(slide)));
   return targetSections.slice(0, 4);
+}
+
+function fallbackDeckPlan(sourceSlides, franceDate) {
+  const contentSlides = getSourceContentSlides(sourceSlides);
+  return {
+    title: firstWords(sourceSlides[0]?.rawText, 7) || 'ASCENCE ADVISORY',
+    subtitle: 'Présentation rebrandée',
+    subsubtitle: 'Synthèse de travail',
+    date: franceDate || franceDateString('month'),
+    sections: distributeSlideIndexes(contentSlides, ['Contexte', 'Analyse', 'Priorités', 'Plan d’action']),
+    closingTagline: 'ASCENCE ADVISORY'
+  };
+}
+
+function buildSectionSkeleton(deckPlan, sourceSlides) {
+  const sourceIndexes = sourceSlides.map(slide => Number(slide.slideIndex));
+  const sectionNames = normalizeSectionNames(deckPlan?.sections);
+  const seen = new Set();
+  const sections = sectionNames.map((name, index) => ({
+    name,
+    slideIndexes: normalizeSlideIndexes(deckPlan?.sections?.[index]?.slideIndexes, sourceIndexes)
+      .filter(slideIndex => {
+        if (seen.has(slideIndex)) return false;
+        seen.add(slideIndex);
+        return true;
+      })
+  }));
+
+  const assigned = new Set(sections.flatMap(section => section.slideIndexes));
+  const missing = sourceIndexes.filter(index => !assigned.has(index));
+  if (!sections.some(section => section.slideIndexes.length) || missing.length > sourceIndexes.length / 2) {
+    return { sections: distributeSlideIndexes(sourceSlides, sectionNames) };
+  }
+
+  missing.forEach(index => {
+    const position = sourceIndexes.indexOf(index);
+    const sectionIndex = Math.min(sections.length - 1, Math.floor(position / Math.ceil(sourceIndexes.length / sections.length)));
+    sections[sectionIndex].slideIndexes.push(index);
+  });
+  sections.forEach(section => {
+    section.slideIndexes = [...new Set(section.slideIndexes)]
+      .filter(index => sourceIndexes.includes(index))
+      .sort((a, b) => a - b);
+  });
+  return { sections: sections.filter(section => section.slideIndexes.length) };
+}
+
+function normalizeSectionNames(sections) {
+  const names = Array.isArray(sections)
+    ? sections.slice(0, 4).map((section, index) => fitTitle(section?.name || `Section ${index + 1}`, 34, 5)).filter(Boolean)
+    : [];
+  return names.length ? names : ['Contexte', 'Analyse', 'Priorités', 'Plan d’action'];
+}
+
+function normalizeSlideIndexes(value, sourceIndexes) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(Number)
+    .filter(index => sourceIndexes.includes(index));
+}
+
+function distributeSlideIndexes(sourceSlides, sectionNames) {
+  const names = sectionNames.slice(0, 4);
+  const indexes = sourceSlides.map(slide => Number(slide.slideIndex));
+  const chunkSize = Math.max(1, Math.ceil(indexes.length / names.length));
+  return names.map((name, index) => ({
+    name: fitTitle(name, 34, 5),
+    slideIndexes: indexes.slice(index * chunkSize, (index + 1) * chunkSize)
+  })).filter(section => section.slideIndexes.length);
+}
+
+function sectionLookup(sections) {
+  const lookup = new Map();
+  sections.forEach(section => {
+    section.slideIndexes.forEach(slideIndex => lookup.set(Number(slideIndex), section.name));
+  });
+  return lookup;
+}
+
+function neighborContext(batch, allSlides) {
+  const indexes = new Set(batch.map(slide => Number(slide.slideIndex)));
+  const wanted = new Set();
+  indexes.forEach(index => {
+    wanted.add(index - 1);
+    wanted.add(index + 1);
+  });
+  return allSlides
+    .filter(slide => wanted.has(Number(slide.slideIndex)) && !indexes.has(Number(slide.slideIndex)))
+    .map(slide => ({
+      slideIndex: slide.slideIndex,
+      rawText: fitText(slide.rawText, 800, 120)
+    }));
+}
+
+function chooseLayoutForSource(text) {
+  const source = String(text || '').toLowerCase();
+  if (/\b(vs|versus|compare|comparaison|axe|axes|actuel|cible|risque|action)\b/.test(source)) return 'A';
+  const bullets = (source.match(/[•\-]\s|\n\d+[.)]/g) || []).length;
+  if (bullets >= 3 || /\b(trois|3|piliers|leviers|options|phases)\b/.test(source)) return 'B';
+  return 'C';
+}
+
+function chunk(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+async function mapLimit(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function run() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
 }
 
 function getSourceContentSlides(sourceSlides) {
