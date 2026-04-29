@@ -290,9 +290,9 @@ Modèle C, un axe en paragraphe:
 - Ce modèle remplace l’ancienne liste en lignes par un seul grand bloc de texte continu.
 - Title: 26 à 48 caractères, une seule ligne.
 - Subtitle: 2 à 4 mots, 32 caractères maximum, pas une phrase longue.
-- Paragraph: 45 à 70 mots, 430 caractères maximum, une seule idée structurée en prose fluide.
+- Paragraph: 34 à 58 mots, 360 caractères maximum, une seule idée structurée en prose fluide.
 - Le paragraphe doit être continu, sans bullets, sans liste numérotée et sans retours à la ligne.
-- Tu peux inclure un seul emoji si cela aide vraiment le sens ou la lisibilité, sinon aucun emoji.
+- N’utilise jamais d’emoji, pictogramme ou symbole décoratif dans ce modèle.
 - À utiliser pour un axe unique, un constat dense, une explication narrative, une synthèse opérationnelle ou une slide qui ne se divise pas naturellement.
 - C est le modèle par défaut à privilégier pour la majorité des slides.
 
@@ -577,7 +577,7 @@ function normalizeContent(layout, content) {
   return {
     title: fitTitle(clean.title || 'Plan d’action opérationnel', 48, 7),
     subtitle: fitText(clean.subtitle || 'Méthode cible', 32, 4),
-    paragraph: fitParagraph(nonEmpty(paragraph, paragraphFromText(defaultRows().join(' '))), 430, 70)
+    paragraph: fitParagraph(removeEmoji(nonEmpty(paragraph, paragraphFromText(defaultRows().join(' ')))), 360, 58)
   };
 }
 
@@ -623,6 +623,13 @@ function removeEmDash(value) {
     return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, removeEmDash(val)]));
   }
   return value;
+}
+
+function removeEmoji(value) {
+  return String(value || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function ensureArray(value) {
@@ -699,7 +706,7 @@ function rowsToParagraph(rows) {
 }
 
 function paragraphFromText(text) {
-  return fitParagraph(text, 430, 70);
+  return fitParagraph(removeEmoji(text), 360, 58);
 }
 
 function normalizeKeywords(keywords, column, count) {

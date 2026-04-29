@@ -155,14 +155,15 @@ function renderContentSlide(xml, shapes, slide) {
   }
 
   const map = mapLayoutCShapes(shapes);
-  const paragraph = fitTextForPptx(content.paragraph || rowsToParagraph(content.rows) || defaultParagraph(), 430, 70);
-  xml = injectTextPreserve(xml, map.title.id, [fitTitleForPptx(content.title, 48, 7)]);
-  if (map.subtitle) xml = injectTextPreserve(xml, map.subtitle.id, [fitTitleForPptx(content.subtitle || '', 32, 4)]);
+  const paragraph = fitTextForPptx(removeEmoji(content.paragraph || rowsToParagraph(content.rows) || defaultParagraph()), 360, 58);
+  const paragraphSize = oneAxisFontSize(paragraph);
+  xml = injectTextPreserve(xml, map.title.id, [removeEmoji(fitTitleForPptx(content.title, 48, 7))]);
+  if (map.subtitle) xml = injectTextPreserve(xml, map.subtitle.id, [removeEmoji(fitTitleForPptx(content.subtitle || '', 32, 4))]);
   const paragraphShapes = map.paragraphShapes.length ? map.paragraphShapes : [map.subtitle].filter(Boolean);
   if (!paragraphShapes.length) return xml;
   if (paragraphShapes.length > 1) xml = stretchShapeLike(xml, paragraphShapes[0].id, paragraphShapes);
   xml = injectTextPreserve(xml, paragraphShapes[0].id, [paragraph]);
-  xml = setShapeTextSize(xml, paragraphShapes[0].id, '1300');
+  xml = setShapeTextSize(xml, paragraphShapes[0].id, paragraphSize);
   paragraphShapes.slice(1).forEach(row => {
     xml = injectTextPreserve(xml, row.id, ['']);
   });
@@ -399,6 +400,15 @@ function defaultParagraph() {
   return 'Le sujet est présenté comme un axe unique, avec les principaux constats, les implications opérationnelles et les priorités à traiter dans une formulation continue.';
 }
 
+function oneAxisFontSize(text) {
+  const words = String(text || '').split(/\s+/).filter(Boolean).length;
+  const chars = String(text || '').length;
+  if (words <= 34 && chars <= 230) return '1700';
+  if (words <= 44 && chars <= 290) return '1600';
+  if (words <= 52 && chars <= 330) return '1500';
+  return '1400';
+}
+
 function bridgeFromColumns(columns) {
   const left = columns[0]?.label || 'Premier axe';
   const right = columns[1]?.label || 'second axe';
@@ -433,6 +443,13 @@ function fitTextForPptx(value, maxChars, maxWords) {
   while (text.length > maxChars && text.includes(' ')) text = text.replace(/\s+\S+$/, '');
   if (text.length > maxChars) text = text.slice(0, maxChars).replace(/\s+\S*$/, '').trim();
   return text || (words[0] || '').slice(0, maxChars);
+}
+
+function removeEmoji(value) {
+  return s(value)
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function ensureArray(value, min) {
