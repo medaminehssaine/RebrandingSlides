@@ -19,7 +19,7 @@ async function analyzePresentation({ slides, description, templateReferences, mo
         content: [
           `Mode de densité demandé: ${modeInstruction(mode)}`,
           `Date actuelle en France au moment de la génération: ${franceDate || franceDateString()}`,
-          `Nombre de slides source extraites: ${slides.length}. Tu dois conserver la couverture complete du deck, sans resume global.`,
+          `Nombre de slides source extraites: ${slides.length}. Tu dois conserver la couverture complète du deck, sans résumé global.`,
           `Description optionnelle utilisateur:\n${description || '(aucune)'}`,
           `Texte extrait des slides source:\n${JSON.stringify(slides, null, 2)}`,
           `Nombre de slides dans le template de référence: ${templateReferences.length}.`
@@ -122,8 +122,10 @@ RÈGLES CRITIQUES DE FIT TEMPLATE:
 - Si une slide source est dense, répartis les détails dans les champs exacts du template.
 
 LIMITES VISUELLES STRICTES:
-- Title de slide contenu: 35 à 70 caractères, maximum 9 mots.
-- Nom de section: 18 à 42 caractères, maximum 6 mots.
+- Tous les titres visibles doivent tenir sur une seule ligne dans le template. Reformule court, jamais de titre sur deux lignes.
+- Titre principal du deck: maximum 52 caractères et 7 mots.
+- Title de slide contenu: 26 à 48 caractères, maximum 7 mots.
+- Nom de section: 14 à 34 caractères, maximum 5 mots.
 - Agenda: noms courts uniquement, aucun numéro, aucun leader pointillé.
 - Si un texte dépasse la limite, raccourcis en gardant les chiffres, noms propres et verbes d’action.
 - Ne mets pas de phrases longues dans les bullets ou labels. Les zones du template sont petites.
@@ -154,12 +156,12 @@ Modèle A, deux axes:
 { "title": "...", "bridge": "...", "columns": [{ "label": "...", "intro": "...", "bullets": ["...", "...", "..."], "keywords": ["...", "...", "..."] }, { "label": "...", "intro": "...", "bullets": ["...", "...", "..."], "keywords": ["...", "...", "..."] }] }
 - Exactement 2 colonnes.
 - Ce modèle correspond à la slide template avec deux axes latéraux et un court paragraphe central.
-- Title: 35 à 65 caractères.
-- Bridge: 16 à 24 mots, une phrase de synthèse située au centre. Elle explique le lien entre les deux axes sans répéter les intros.
+- Title: 26 à 48 caractères, une seule ligne.
+- Bridge: 12 à 18 mots, une phrase de synthèse située au centre. Elle explique le lien entre les deux axes sans répéter les intros.
 - Label: 1 à 2 mots, en MAJUSCULES, 14 caractères maximum, sans ponctuation.
-- Intro: 24 à 34 mots, une phrase plus détaillée, 220 caractères maximum. Elle doit contextualiser l’axe, pas seulement annoncer un thème.
+- Intro: 18 à 26 mots, une phrase détaillée mais compacte, 165 caractères maximum. Elle doit contextualiser l’axe, pas seulement annoncer un thème.
 - Exactement 3 bullets par colonne.
-- Bullet: 6 à 11 mots, 72 caractères maximum, concret, sans point final.
+- Bullet: 5 à 9 mots, 58 caractères maximum, concret, sans point final.
 - Keywords: exactement 2 à 3 mots ou courtes expressions par axe. Chaque keyword doit apparaître tel quel dans l’intro ou les bullets du même axe. Ces keywords seront mis en gras dans PowerPoint.
 - À utiliser pour comparaison, deux axes, diagnostic vs cible, risques vs actions, transformation vs fidélisation.
 - Ne choisis pas A si le contenu n’a pas deux axes naturels. Utilise B ou C à la place.
@@ -167,21 +169,20 @@ Modèle A, deux axes:
 Modèle B, trois cartes:
 { "title": "...", "columns": [{ "header": "...", "body": "..." }, { "header": "...", "body": "..." }, { "header": "...", "body": "..." }] }
 - Exactement 3 colonnes.
-- Title: 35 à 65 caractères.
+- Title: 26 à 48 caractères, une seule ligne.
 - Header: 2 à 4 mots, 26 caractères maximum.
-- Body: 18 à 28 mots, 170 caractères maximum, paragraphe compact.
+- Body: 14 à 22 mots, 135 caractères maximum, paragraphe compact.
 - À utiliser pour trois piliers, trois leviers, trois phases, trois options ou trois constats.
 
-Modèle C, liste en lignes:
-{ "title": "...", "subtitle": "...", "rows": [{ "icon": "•", "text": "..." }, { "icon": "•", "text": "..." }, { "icon": "•", "text": "..." }, { "icon": "•", "text": "..." }] }
-- Exactement 4 lignes. La quatrième ligne ne doit jamais être vide.
-- Chaque texte de ligne commence par un label court suivi de deux-points, puis une explication.
-- Exemple: "Cadrage: définir le périmètre et les responsabilités".
-- Title: 35 à 65 caractères.
-- Chaque ligne: 11 à 18 mots, 130 caractères maximum.
-- Le label avant deux-points: 1 à 3 mots, 24 caractères maximum.
+Modèle C, un axe en paragraphe:
+{ "title": "...", "subtitle": "...", "paragraph": "..." }
+- Ce modèle remplace l’ancienne liste en lignes par un seul grand bloc de texte continu.
+- Title: 26 à 48 caractères, une seule ligne.
 - Subtitle: 2 à 4 mots, 32 caractères maximum, pas une phrase longue.
-- À utiliser pour étapes, challenges, roadmap, irritants, actions ou modèle opératoire.
+- Paragraph: 45 à 70 mots, 430 caractères maximum, une seule idée structurée en prose fluide.
+- Le paragraphe doit être continu, sans bullets, sans liste numérotée et sans retours à la ligne.
+- Tu peux inclure un seul emoji si cela aide vraiment le sens ou la lisibilité, sinon aucun emoji.
+- À utiliser pour un axe unique, un constat dense, une explication narrative, une synthèse opérationnelle ou une slide qui ne se divise pas naturellement.
 
 CHOIX STRUCTURE:
 - Crée 2 à 4 sections maximum, car l’agenda du template a quatre lignes visibles.
@@ -194,7 +195,7 @@ CHOIX STRUCTURE:
 - Ne fusionne pas, ne saute pas et ne condense pas les slides pour raccourcir la réponse.
 - Chaque section doit contenir au moins une slide de contenu.
 - Choisis A, B ou C selon la forme du contenu, pas au hasard.
-- Si tu choisis C, fournis toujours 4 lignes complètes.
+- Si tu choisis C, fournis toujours un paragraphe complet, jamais des lignes séparées.
 - Ne rends jamais des champs vides sous prétexte que le contenu source est court.
 `.trim();
 }
@@ -222,14 +223,14 @@ function sanitizePresentation(result, sourceSlides) {
     ? clean.sections.slice(0, 4)
     : fallbackSections(sourceSlides);
   const normalizedSections = ensureSourceCoverage(sections.map((section, sectionIndex) => ({
-    name: fitText(section.name || `Section ${sectionIndex + 1}`, 42, 6),
+    name: fitTitle(section.name || `Section ${sectionIndex + 1}`, 34, 5),
     slides: normalizeSlides(section.slides || [], sourceSlides)
   })).filter(section => section.slides.length), sourceSlides);
 
   return {
-    title: fitText(clean.title || firstWords(sourceSlides[0]?.rawText, 8) || 'ASCENCE ADVISORY', 70, 9),
-    subtitle: fitText(clean.subtitle || 'Présentation rebrandée', 70, 10),
-    subsubtitle: fitText(clean.subsubtitle || clean['sub-subtitle'] || 'Synthèse de travail', 80, 12),
+    title: fitTitle(clean.title || firstWords(sourceSlides[0]?.rawText, 8) || 'ASCENCE ADVISORY', 52, 7),
+    subtitle: fitTitle(clean.subtitle || 'Présentation rebrandée', 48, 7),
+    subsubtitle: fitTitle(clean.subsubtitle || clean['sub-subtitle'] || 'Synthèse de travail', 56, 8),
     date: clean.date || franceDateString('month'),
     sections: normalizedSections,
     closingTagline: clean.closingTagline || 'ASCENCE ADVISORY'
@@ -286,8 +287,8 @@ function fallbackSlide(slide) {
     layout: 'C',
     content: normalizeContent('C', {
       title: firstWords(slide.rawText, 8) || `Slide ${slide.slideIndex}`,
-      subtitle: 'Points clÃ©s',
-      rows: chunkText(slide.rawText).map(text => ({ icon: 'â€¢', text }))
+      subtitle: 'Points clés',
+      paragraph: paragraphFromText(slide.rawText)
     })
   };
 }
@@ -298,14 +299,14 @@ function normalizeContent(layout, content) {
     const columns = Array.isArray(clean.columns) ? clean.columns.slice(0, 2) : [];
     while (columns.length < 2) columns.push({});
     return {
-      title: fitText(clean.title || 'Analyse structurée des priorités clés', 70, 9),
-      bridge: fitSentence(clean.bridge || 'Ces deux axes structurent les priorités de transformation et orientent les décisions opérationnelles à engager.', 170, 24),
+      title: fitTitle(clean.title || 'Analyse structurée des priorités clés', 48, 7),
+      bridge: fitSentence(clean.bridge || 'Ces deux axes structurent les priorités de transformation et orientent les décisions opérationnelles à engager.', 125, 18),
       columns: columns.map((column, index) => ({
         label: fitLabel(nonEmpty(column.label, index === 0 ? 'AXE UN' : 'AXE DEUX')),
-        intro: fitSentence(nonEmpty(column.intro, 'Cette dimension synthétise les principaux constats, leurs implications opérationnelles et les décisions à sécuriser rapidement.'), 220, 34),
+        intro: fitSentence(nonEmpty(column.intro, 'Cette dimension synthétise les constats, les implications opérationnelles et les décisions à sécuriser rapidement.'), 165, 26),
         bullets: fillList(column.bullets, 3, ['Clarifier les priorités clés', 'Structurer les actions immédiates', 'Suivre les résultats attendus'])
           .slice(0, 3)
-          .map(item => fitText(item, 72, 11)),
+          .map(item => fitText(item, 58, 9)),
         keywords: normalizeKeywords(column.keywords, column, 3)
       }))
     };
@@ -314,22 +315,18 @@ function normalizeContent(layout, content) {
     const columns = Array.isArray(clean.columns) ? clean.columns.slice(0, 3) : [];
     while (columns.length < 3) columns.push({});
     return {
-      title: fitText(clean.title || 'Trois leviers clés à activer', 70, 9),
+      title: fitTitle(clean.title || 'Trois leviers clés à activer', 48, 7),
       columns: columns.map((column, index) => ({
         header: fitText(nonEmpty(column.header, `Levier ${index + 1}`), 26, 4),
-        body: fitSentence(nonEmpty(column.body, 'Ce levier précise les actions à engager, les responsabilités à clarifier et les effets attendus sur la performance.'), 170, 28)
+        body: fitSentence(nonEmpty(column.body, 'Ce levier précise les actions à engager, les responsabilités à clarifier et les effets attendus.'), 135, 22)
       }))
     };
   }
-  const rows = Array.isArray(clean.rows) ? clean.rows.slice(0, 4) : [];
-  while (rows.length < 4) rows.push({});
+  const paragraph = clean.paragraph || rowsToParagraph(clean.rows);
   return {
-    title: fitText(clean.title || 'Plan d’action opérationnel', 70, 9),
+    title: fitTitle(clean.title || 'Plan d’action opérationnel', 48, 7),
     subtitle: fitText(clean.subtitle || 'Méthode cible', 32, 4),
-    rows: rows.map((row, index) => ({
-      icon: row.icon || '•',
-      text: fitRow(ensureColon(nonEmpty(row.text, defaultRows()[index])))
-    }))
+    paragraph: fitParagraph(nonEmpty(paragraph, paragraphFromText(defaultRows().join(' '))), 430, 70)
   };
 }
 
@@ -343,7 +340,7 @@ function fallbackSections(sourceSlides) {
       content: normalizeContent('C', {
         title: firstWords(slide.rawText, 8) || `Slide ${slide.slideIndex}`,
         subtitle: 'Points clés',
-        rows: chunkText(slide.rawText).map(text => ({ icon: '•', text }))
+        paragraph: paragraphFromText(slide.rawText)
       })
     }))
   }];
@@ -421,11 +418,37 @@ function fitRow(value) {
   return `${label}: ${body}`;
 }
 
+function fitTitle(value, maxChars, maxWords) {
+  return fitText(value, maxChars, maxWords)
+    .replace(/[:;,.]+$/g, '')
+    .trim();
+}
+
+function fitParagraph(value, maxChars, maxWords) {
+  return fitText(String(value || '').replace(/[\r\n]+/g, ' '), maxChars, maxWords)
+    .replace(/\s+/g, ' ')
+    .replace(/[;:,]+$/g, '')
+    .trim();
+}
+
 function fitText(value, maxChars, maxWords) {
   const words = String(value || '').replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
   let text = words.slice(0, maxWords).join(' ');
   while (text.length > maxChars && text.includes(' ')) text = text.replace(/\s+\S+$/, '');
-  return text || words[0] || '';
+  if (text.length > maxChars) text = text.slice(0, maxChars).replace(/\s+\S*$/, '').trim();
+  return text || (words[0] || '').slice(0, maxChars);
+}
+
+function rowsToParagraph(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .map(row => typeof row === 'string' ? row : row?.text)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function paragraphFromText(text) {
+  return fitParagraph(text, 430, 70);
 }
 
 function normalizeKeywords(keywords, column, count) {

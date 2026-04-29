@@ -106,21 +106,21 @@ function renderTemplateSlide(template, templateSlide, data) {
   const shapes = slide.shapes;
 
   if (data.type === 'title') {
-    xml = injectTextPreserve(xml, findShape(shapes, 'Title', 0).id, [data.state.title]);
-    xml = injectTextPreserve(xml, findShape(shapes, 'Sub-Title', 1).id, [data.state.subtitle]);
-    xml = injectTextPreserve(xml, findShape(shapes, 'Sub-Sub-Title', 2).id, [data.state.subsubtitle]);
+    xml = injectTextPreserve(xml, findShape(shapes, 'Title', 0).id, [fitTitleForPptx(data.state.title, 52, 7)]);
+    xml = injectTextPreserve(xml, findShape(shapes, 'Sub-Title', 1).id, [fitTitleForPptx(data.state.subtitle, 48, 7)]);
+    xml = injectTextPreserve(xml, findShape(shapes, 'Sub-Sub-Title', 2).id, [fitTitleForPptx(data.state.subsubtitle, 56, 8)]);
     xml = injectTextPreserve(xml, findShape(shapes, '19 février 2026', 3).id, [data.state.date]);
   } else if (data.type === 'agenda') {
     const agendaShape = findByText(shapes, 'Agenda') || shapes[0];
     const listShape = shapes.find(shape => shape.id !== agendaShape.id && shape.rawText.includes('Rubrique')) || shapes[1];
-    const items = (data.state.sections || []).slice(0, 4).map(section => section.name || 'Rubrique');
+    const items = (data.state.sections || []).slice(0, 4).map(section => fitTitleForPptx(section.name || 'Rubrique', 34, 5));
     while (items.length < 4) items.push('');
     xml = injectTextPreserve(xml, agendaShape.id, ['Agenda']);
     xml = injectTextPreserve(xml, listShape.id, items);
   } else if (data.type === 'section') {
     const nameShape = shapes.find(shape => shape.rawText.includes('Rubrique')) || shapes[0];
     const numberShape = shapes.find(shape => /\d\d\./.test(shape.rawText)) || shapes[shapes.length - 1];
-    xml = injectTextPreserve(xml, nameShape.id, [data.section.name]);
+    xml = injectTextPreserve(xml, nameShape.id, [fitTitleForPptx(data.section.name, 34, 5)]);
     xml = injectTextPreserve(xml, numberShape.id, [`${String(data.sectionIndex + 1).padStart(2, '0')}.`]);
   } else if (data.type === 'content') {
     xml = renderContentSlide(xml, shapes, data.slide);
@@ -132,21 +132,21 @@ function renderTemplateSlide(template, templateSlide, data) {
 function renderContentSlide(xml, shapes, slide) {
   const content = slide.content || {};
   if (slide.layout === 'A') {
-    const columns = ensureArray(content.columns, 2);
+    const columns = ensureArray(content.columns, 2).map(normalizeAxisColumnForPptx);
     const map = mapLayoutAShapes(shapes);
-    xml = injectTextPreserve(xml, map.title.id, [content.title]);
+    xml = injectTextPreserve(xml, map.title.id, [fitTitleForPptx(content.title, 48, 7)]);
     xml = injectTextPreserve(xml, map.leftHeader.id, [columns[0].label || 'AXE']);
     xml = injectAxisContentPreserve(xml, map.leftBody.id, columns[0]);
-    xml = injectTextPreserve(xml, map.bridge.id, [content.bridge || bridgeFromColumns(columns)]);
+    xml = injectTextPreserve(xml, map.bridge.id, [fitTextForPptx(content.bridge || bridgeFromColumns(columns), 125, 18)]);
     xml = injectAxisContentPreserve(xml, map.rightBody.id, columns[1]);
     xml = injectTextPreserve(xml, map.rightHeader.id, [columns[1].label || 'AXE']);
     return xml;
   }
 
   if (slide.layout === 'B') {
-    const columns = ensureArray(content.columns, 3);
+    const columns = ensureArray(content.columns, 3).map(normalizeCardColumnForPptx);
     const map = mapLayoutBShapes(shapes);
-    xml = injectTextPreserve(xml, map.title.id, [content.title]);
+    xml = injectTextPreserve(xml, map.title.id, [fitTitleForPptx(content.title, 48, 7)]);
     columns.forEach((column, index) => {
       xml = injectTextPreserve(xml, map.headers[index].id, [column.header || `Levier ${index + 1}`]);
       xml = injectTextPreserve(xml, map.bodies[index].id, [column.body || '']);
@@ -154,13 +154,14 @@ function renderContentSlide(xml, shapes, slide) {
     return xml;
   }
 
-  const rows = ensureArray(content.rows, 4).slice(0, 4);
   const map = mapLayoutCShapes(shapes);
-  xml = injectTextPreserve(xml, map.title.id, [content.title]);
-  xml = injectTextPreserve(xml, map.subtitle.id, [content.subtitle || '']);
-  rows.forEach((row, index) => {
-    const pair = splitRow(row.text || defaultRow(index), index);
-    xml = injectTextPreserve(xml, map.rows[index].id, pair);
+  const paragraph = fitTextForPptx(content.paragraph || rowsToParagraph(content.rows) || defaultParagraph(), 430, 70);
+  xml = injectTextPreserve(xml, map.title.id, [fitTitleForPptx(content.title, 48, 7)]);
+  xml = injectTextPreserve(xml, map.subtitle.id, [fitTitleForPptx(content.subtitle || '', 32, 4)]);
+  xml = stretchShapeLike(xml, map.rows[0].id, map.rows);
+  xml = injectTextPreserve(xml, map.rows[0].id, [paragraph]);
+  map.rows.slice(1).forEach(row => {
+    xml = injectTextPreserve(xml, row.id, ['']);
   });
   return xml;
 }
@@ -237,6 +238,25 @@ function replaceShapeXml(xml, id, transform) {
   if (sp0 < 0 || sp1 < 7) return xml;
   const block = xml.slice(sp0, sp1);
   return xml.slice(0, sp0) + transform(block) + xml.slice(sp1);
+}
+
+function stretchShapeLike(xml, id, shapes) {
+  const boxes = shapes.map(shapeBox).filter(Boolean);
+  if (!boxes.length) return xml;
+  const x = Math.min(...boxes.map(box => box.x));
+  const y = Math.min(...boxes.map(box => box.y));
+  const right = Math.max(...boxes.map(box => box.x + box.cx));
+  const bottom = Math.max(...boxes.map(box => box.y + box.cy));
+  return replaceShapeXml(xml, id, shapeXml => shapeXml
+    .replace(/<a:off x="[^"]*" y="[^"]*"\//, `<a:off x="${x}" y="${y}"/`)
+    .replace(/<a:ext cx="[^"]*" cy="[^"]*"\//, `<a:ext cx="${right - x}" cy="${bottom - y}"/`));
+}
+
+function shapeBox(shape) {
+  const off = (shape.xml.match(/<a:off x="([^"]+)" y="([^"]+)"/) || []).slice(1).map(Number);
+  const ext = (shape.xml.match(/<a:ext cx="([^"]+)" cy="([^"]+)"/) || []).slice(1).map(Number);
+  if (off.length < 2 || ext.length < 2 || off.some(Number.isNaN) || ext.some(Number.isNaN)) return null;
+  return { x: off[0], y: off[1], cx: ext[0], cy: ext[1] };
 }
 
 function replaceParagraphText(paragraphXml, value, keywords = []) {
@@ -348,10 +368,51 @@ function defaultRow(index) {
   ][index] || 'Action: préciser les responsabilités et les résultats attendus';
 }
 
+function rowsToParagraph(rows) {
+  return ensureArray(rows, 0)
+    .map(row => typeof row === 'string' ? row : row?.text)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function defaultParagraph() {
+  return 'Le sujet est présenté comme un axe unique, avec les principaux constats, les implications opérationnelles et les priorités à traiter dans une formulation continue.';
+}
+
 function bridgeFromColumns(columns) {
   const left = columns[0]?.label || 'Premier axe';
   const right = columns[1]?.label || 'second axe';
   return `${left} et ${right} structurent les priorités à traiter et les décisions opérationnelles à engager.`;
+}
+
+function normalizeAxisColumnForPptx(column) {
+  return {
+    ...column,
+    label: fitTitleForPptx(column?.label || 'AXE', 14, 2).replace(/[^\p{L}\p{N}\s]/gu, '').toUpperCase() || 'AXE',
+    intro: fitTextForPptx(column?.intro || '', 165, 26),
+    bullets: ensureArray(column?.bullets, 3).slice(0, 3).map(item => fitTextForPptx(item, 58, 9)),
+    keywords: column?.keywords || []
+  };
+}
+
+function normalizeCardColumnForPptx(column) {
+  return {
+    ...column,
+    header: fitTitleForPptx(column?.header || '', 26, 4),
+    body: fitTextForPptx(column?.body || '', 135, 22)
+  };
+}
+
+function fitTitleForPptx(value, maxChars, maxWords) {
+  return fitTextForPptx(value, maxChars, maxWords).replace(/[:;,.]+$/g, '').trim();
+}
+
+function fitTextForPptx(value, maxChars, maxWords) {
+  const words = s(value).replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  let text = words.slice(0, maxWords).join(' ');
+  while (text.length > maxChars && text.includes(' ')) text = text.replace(/\s+\S+$/, '');
+  if (text.length > maxChars) text = text.slice(0, maxChars).replace(/\s+\S*$/, '').trim();
+  return text || (words[0] || '').slice(0, maxChars);
 }
 
 function ensureArray(value, min) {

@@ -942,11 +942,9 @@
           container.innerHTML += `<div class="field-row">${field(`Colonne ${index + 1} - Titre`, `content.columns.${index}.header`, column.header, false)}${field(`Colonne ${index + 1} - Texte`, `content.columns.${index}.body`, column.body)}</div>`;
         });
       } else {
-        const rows = ensure(slide.content.rows, 4);
-        container.innerHTML = field('Titre', 'content.title', slide.content.title) + field('Sous-titre', 'content.subtitle', slide.content.subtitle);
-        rows.forEach((row, index) => {
-          container.innerHTML += `<div class="field-row">${field(`Ligne ${index + 1} - Icône`, `content.rows.${index}.icon`, row.icon || '.', false)}${field(`Ligne ${index + 1} - Texte`, `content.rows.${index}.text`, row.text)}</div>`;
-        });
+        container.innerHTML = field('Titre', 'content.title', slide.content.title)
+          + field('Sous-titre', 'content.subtitle', slide.content.subtitle)
+          + field('Paragraphe continu', 'content.paragraph', slide.content.paragraph || rowsToParagraph(slide.content.rows));
       }
       bindContentFields(slide);
     }
@@ -995,7 +993,7 @@
       if (slide.layout === 'B') {
         return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><div class="mini-cols">${ensure(c.columns, 3).map(col => `<div class="mini-box"><strong>${escapeHtml(col.header || '')}</strong><p>${escapeHtml(col.body || '')}</p></div>`).join('')}</div></div>`;
       }
-      return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><p>${escapeHtml(c.subtitle || '')}</p>${ensure(c.rows, 4).map(row => `<p><strong style="color:var(--maroon)">${escapeHtml(row.icon || '.')}</strong> ${escapeHtml(row.text || '')}</p>`).join('')}</div>`;
+      return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><p>${escapeHtml(c.subtitle || '')}</p><p>${escapeHtml(c.paragraph || rowsToParagraph(c.rows))}</p></div>`;
     }
 
     function getActive() {
@@ -1025,7 +1023,11 @@
       if (to === 'B') {
         return { title, columns: [0, 1, 2].map(i => ({ header: lines[i] || `Thème ${i + 1}`, body: lines[i + 3] || '' })) };
       }
-      return { title, subtitle: lines[0] || '', rows: [0, 1, 2, 3].map(i => ({ icon: '.', text: lines[i + 1] || '' })).filter((row, index) => row.text || index < 3) };
+      return { title, subtitle: lines[0] || '', paragraph: lines.slice(1).join(' ') || lines[0] || '' };
+    }
+
+    function rowsToParagraph(rows) {
+      return ensure(rows, 0).map(row => typeof row === 'string' ? row : row.text).filter(Boolean).join(' ');
     }
 
     function collectText(value) {
