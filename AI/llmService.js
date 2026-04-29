@@ -1,0 +1,431 @@
+'use strict';
+
+const OpenAI = require('openai');
+
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+
+function client() {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY est manquante dans .env.');
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
+async function analyzePresentation({ slides, description, templateReferences, mode = 'equilibre', franceDate = '' }) {
+  return withJsonRetry(async () => {
+    const result = await completeJson([
+      { role: 'system', content: buildSystemPrompt() },
+      {
+        role: 'user',
+        content: [
+          `Mode de densité demandé: ${modeInstruction(mode)}`,
+          `Date actuelle en France au moment de la génération: ${franceDate || franceDateString()}`,
+          `Description optionnelle utilisateur:\n${description || '(aucune)'}`,
+          `Texte extrait des slides source:\n${JSON.stringify(slides, null, 2)}`,
+          `Nombre de slides dans le template de référence: ${templateReferences.length}.`
+        ].join('\n\n')
+      }
+    ]);
+    return sanitizePresentation(result, slides);
+  }, 'OpenAI a retourné un JSON invalide pendant l’analyse du deck.');
+}
+
+async function regenerateSlide({ slide, layout, mode = 'equilibre', franceDate = '' }) {
+  return withJsonRetry(async () => {
+    const result = await completeJson([
+      { role: 'system', content: buildSystemPrompt() },
+      {
+        role: 'user',
+        content: [
+          `Régénère uniquement cette slide de contenu dans le modèle ${layout}.`,
+          `Mode de densité: ${modeInstruction(mode)}`,
+          `Date actuelle en France: ${franceDate || franceDateString()}`,
+          'Retourne uniquement ce JSON: {"layout":"A|B|C","content":{...}}.',
+          'Respecte exactement les nombres de champs du template. Aucun champ visible ne doit être vide.',
+          JSON.stringify(slide, null, 2)
+        ].join('\n\n')
+      }
+    ]);
+    return sanitizeSlide(result, slide, layout);
+  }, 'OpenAI a retourné un JSON invalide pendant la régénération de la slide.');
+}
+
+async function regeneratePresentation({ state, mode = 'equilibre', franceDate = '' }) {
+  return withJsonRetry(async () => {
+    const result = await completeJson([
+      { role: 'system', content: buildSystemPrompt() },
+      {
+        role: 'user',
+        content: [
+          `Régénère toute la présentation avec ce mode de densité: ${modeInstruction(mode)}`,
+          `Date actuelle en France au moment de la régénération: ${franceDate || franceDateString()}`,
+          'Garde le même schéma JSON. Tu peux améliorer les sections, les modèles, la formulation et la répartition du contenu.',
+          'Préserve le sens du deck actuel. Remplis tous les champs du template. Ne crée jamais de numéros de page pour l’agenda.',
+          JSON.stringify(state, null, 2)
+        ].join('\n\n')
+      }
+    ]);
+    return sanitizePresentation(result, flattenStateSlides(state));
+  }, 'OpenAI a retourné un JSON invalide pendant la régénération de la présentation.');
+}
+
+async function completeJson(messages) {
+  const response = await client().chat.completions.create({
+    model: MODEL,
+    temperature: 0.25,
+    response_format: { type: 'json_object' },
+    messages
+  });
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) throw new Error('OpenAI a retourné une réponse vide.');
+  return JSON.parse(content);
+}
+
+async function withJsonRetry(fn, message) {
+  try {
+    return await fn();
+  } catch (firstError) {
+    try {
+      return await fn();
+    } catch (secondError) {
+      const detail = secondError.message || firstError.message;
+      throw new Error(`${message} ${detail}`);
+    }
+  }
+}
+
+function buildSystemPrompt() {
+  return `
+Tu es un expert senior en conseil et en reformatage de présentations PowerPoint.
+Tu transformes un deck source en contenu prêt à injecter dans le vrai template ASCENCE ADVISORY.
+Retourne uniquement du JSON valide, sans prose, sans markdown, sans balises de code.
+N’utilise jamais de tiret cadratin. Utilise des virgules, deux-points, points-virgules ou phrases courtes.
+
+LANGUE:
+- Si le deck source est majoritairement en français, écris tout en français professionnel.
+- Si le deck source est majoritairement dans une autre langue, conserve cette langue.
+
+DATE:
+- Utilise la date actuelle en France fournie dans le message utilisateur pour le champ "date", sauf si le deck source impose explicitement une autre date.
+- Le champ date doit être court et lisible, par exemple "Avril 2026" ou "29 avril 2026", selon le niveau de précision du deck source.
+
+RÈGLES CRITIQUES DE FIT TEMPLATE:
+- Le contenu sera injecté dans le fichier réel "Template So Far.pptx", dans ses vrais emplacements fixes.
+- La génération PPTX conserve exactement les styles du template: polices, tailles, couleurs, alignements, interlignes, puces et espacements. Tu dois donc adapter le volume de texte aux zones existantes, jamais demander une mise en forme différente.
+- Aucun champ visible ne doit être vide. Pas de point 4 vide, pas de label vide, pas de body vide, pas de "TBD".
+- Ne crée jamais de contenu d’agenda. L’agenda est généré uniquement avec les noms de sections, sans numéros de page.
+- Garde un volume de mots aussi proche que possible du deck source. Cible plus ou moins 15 pour cent, sauf demande de densité contraire.
+- Préserve les chiffres, dates, noms propres, acronymes, constats, risques, actions, priorités et détails opérationnels.
+- Supprime les doublons et le remplissage, mais ne supprime pas les idées substantielles.
+- Si une slide source est pauvre, enrichis prudemment avec le contexte et les slides voisines.
+- Si une slide source est dense, répartis les détails dans les champs exacts du template.
+
+LIMITES VISUELLES STRICTES:
+- Title de slide contenu: 35 à 70 caractères, maximum 9 mots.
+- Nom de section: 18 à 42 caractères, maximum 6 mots.
+- Agenda: noms courts uniquement, aucun numéro, aucun leader pointillé.
+- Si un texte dépasse la limite, raccourcis en gardant les chiffres, noms propres et verbes d’action.
+- Ne mets pas de phrases longues dans les bullets ou labels. Les zones du template sont petites.
+- Évite les retours à la ligne manuels, parenthèses longues, listes dans un champ, slashs répétés et formulations avec plusieurs propositions.
+
+JSON obligatoire:
+{
+  "title": "...",
+  "subtitle": "...",
+  "subsubtitle": "...",
+  "date": "...",
+  "sections": [
+    {
+      "name": "Nom de section",
+      "slides": [
+        {
+          "originalSlideIndex": 2,
+          "layout": "A",
+          "content": {}
+        }
+      ]
+    }
+  ],
+  "closingTagline": "..."
+}
+
+Modèle A, deux axes:
+{ "title": "...", "bridge": "...", "columns": [{ "label": "...", "intro": "...", "bullets": ["...", "...", "..."], "keywords": ["...", "...", "..."] }, { "label": "...", "intro": "...", "bullets": ["...", "...", "..."], "keywords": ["...", "...", "..."] }] }
+- Exactement 2 colonnes.
+- Ce modèle correspond à la slide template avec deux axes latéraux et un court paragraphe central.
+- Title: 35 à 65 caractères.
+- Bridge: 16 à 24 mots, une phrase de synthèse située au centre. Elle explique le lien entre les deux axes sans répéter les intros.
+- Label: 1 à 2 mots, en MAJUSCULES, 14 caractères maximum, sans ponctuation.
+- Intro: 24 à 34 mots, une phrase plus détaillée, 220 caractères maximum. Elle doit contextualiser l’axe, pas seulement annoncer un thème.
+- Exactement 3 bullets par colonne.
+- Bullet: 6 à 11 mots, 72 caractères maximum, concret, sans point final.
+- Keywords: exactement 2 à 3 mots ou courtes expressions par axe. Chaque keyword doit apparaître tel quel dans l’intro ou les bullets du même axe. Ces keywords seront mis en gras dans PowerPoint.
+- À utiliser pour comparaison, deux axes, diagnostic vs cible, risques vs actions, transformation vs fidélisation.
+- Ne choisis pas A si le contenu n’a pas deux axes naturels. Utilise B ou C à la place.
+
+Modèle B, trois cartes:
+{ "title": "...", "columns": [{ "header": "...", "body": "..." }, { "header": "...", "body": "..." }, { "header": "...", "body": "..." }] }
+- Exactement 3 colonnes.
+- Title: 35 à 65 caractères.
+- Header: 2 à 4 mots, 26 caractères maximum.
+- Body: 18 à 28 mots, 170 caractères maximum, paragraphe compact.
+- À utiliser pour trois piliers, trois leviers, trois phases, trois options ou trois constats.
+
+Modèle C, liste en lignes:
+{ "title": "...", "subtitle": "...", "rows": [{ "icon": "•", "text": "..." }, { "icon": "•", "text": "..." }, { "icon": "•", "text": "..." }, { "icon": "•", "text": "..." }] }
+- Exactement 4 lignes. La quatrième ligne ne doit jamais être vide.
+- Chaque texte de ligne commence par un label court suivi de deux-points, puis une explication.
+- Exemple: "Cadrage: définir le périmètre et les responsabilités".
+- Title: 35 à 65 caractères.
+- Chaque ligne: 11 à 18 mots, 130 caractères maximum.
+- Le label avant deux-points: 1 à 3 mots, 24 caractères maximum.
+- Subtitle: 2 à 4 mots, 32 caractères maximum, pas une phrase longue.
+- À utiliser pour étapes, challenges, roadmap, irritants, actions ou modèle opératoire.
+
+CHOIX STRUCTURE:
+- Crée 2 à 4 sections maximum, car l’agenda du template a quatre lignes visibles.
+- Chaque section doit contenir au moins une slide de contenu.
+- Choisis A, B ou C selon la forme du contenu, pas au hasard.
+- Si tu choisis C, fournis toujours 4 lignes complètes.
+- Ne rends jamais des champs vides sous prétexte que le contenu source est court.
+`.trim();
+}
+
+function modeInstruction(mode) {
+  const modes = {
+    detaille: 'Plus détaillé, préserver toutes les idées source et ajouter des précisions utiles si le template a de la place. Cible 115 à 130 pour cent du volume source.',
+    equilibre: 'Équilibré, garder un volume très proche de la source et remplir proprement le template. Cible 90 à 110 pour cent du volume source.',
+    bref: 'Plus bref, garder les points les plus forts tout en préservant le sens. Cible 70 à 85 pour cent du volume source.',
+    concis: 'Très concis, phrases courtes, aucun remplissage, claims précis. Cible 55 à 70 pour cent du volume source.'
+  };
+  return modes[mode] || modes.equilibre;
+}
+
+function franceDateString(granularity = 'full') {
+  const options = granularity === 'month'
+    ? { timeZone: 'Europe/Paris', month: 'long', year: 'numeric' }
+    : { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric' };
+  return new Intl.DateTimeFormat('fr-FR', options).format(new Date());
+}
+
+function sanitizePresentation(result, sourceSlides) {
+  const clean = removeEmDash(result || {});
+  const sections = Array.isArray(clean.sections) && clean.sections.length
+    ? clean.sections.slice(0, 4)
+    : fallbackSections(sourceSlides);
+  return {
+    title: fitText(clean.title || firstWords(sourceSlides[0]?.rawText, 8) || 'ASCENCE ADVISORY', 70, 9),
+    subtitle: fitText(clean.subtitle || 'Présentation rebrandée', 70, 10),
+    subsubtitle: fitText(clean.subsubtitle || clean['sub-subtitle'] || 'Synthèse de travail', 80, 12),
+    date: clean.date || franceDateString('month'),
+    sections: sections.map((section, sectionIndex) => ({
+      name: fitText(section.name || `Section ${sectionIndex + 1}`, 42, 6),
+      slides: normalizeSlides(section.slides || [], sourceSlides)
+    })).filter(section => section.slides.length),
+    closingTagline: clean.closingTagline || 'ASCENCE ADVISORY'
+  };
+}
+
+function sanitizeSlide(result, originalSlide, requestedLayout) {
+  const layout = ['A', 'B', 'C'].includes(result.layout) ? result.layout : requestedLayout;
+  return {
+    ...originalSlide,
+    layout,
+    content: normalizeContent(layout, result.content || originalSlide.content || {})
+  };
+}
+
+function normalizeSlides(slides, sourceSlides) {
+  if (!slides.length) return fallbackSections(sourceSlides)[0].slides;
+  return slides.map(slide => {
+    const layout = ['A', 'B', 'C'].includes(slide.layout) ? slide.layout : 'C';
+    return {
+      originalSlideIndex: Number(slide.originalSlideIndex) || null,
+      layout,
+      content: normalizeContent(layout, slide.content || {})
+    };
+  });
+}
+
+function normalizeContent(layout, content) {
+  const clean = removeEmDash(content || {});
+  if (layout === 'A') {
+    const columns = Array.isArray(clean.columns) ? clean.columns.slice(0, 2) : [];
+    while (columns.length < 2) columns.push({});
+    return {
+      title: fitText(clean.title || 'Analyse structurée des priorités clés', 70, 9),
+      bridge: fitSentence(clean.bridge || 'Ces deux axes structurent les priorités de transformation et orientent les décisions opérationnelles à engager.', 170, 24),
+      columns: columns.map((column, index) => ({
+        label: fitLabel(nonEmpty(column.label, index === 0 ? 'AXE UN' : 'AXE DEUX')),
+        intro: fitSentence(nonEmpty(column.intro, 'Cette dimension synthétise les principaux constats, leurs implications opérationnelles et les décisions à sécuriser rapidement.'), 220, 34),
+        bullets: fillList(column.bullets, 3, ['Clarifier les priorités clés', 'Structurer les actions immédiates', 'Suivre les résultats attendus'])
+          .slice(0, 3)
+          .map(item => fitText(item, 72, 11)),
+        keywords: normalizeKeywords(column.keywords, column, 3)
+      }))
+    };
+  }
+  if (layout === 'B') {
+    const columns = Array.isArray(clean.columns) ? clean.columns.slice(0, 3) : [];
+    while (columns.length < 3) columns.push({});
+    return {
+      title: fitText(clean.title || 'Trois leviers clés à activer', 70, 9),
+      columns: columns.map((column, index) => ({
+        header: fitText(nonEmpty(column.header, `Levier ${index + 1}`), 26, 4),
+        body: fitSentence(nonEmpty(column.body, 'Ce levier précise les actions à engager, les responsabilités à clarifier et les effets attendus sur la performance.'), 170, 28)
+      }))
+    };
+  }
+  const rows = Array.isArray(clean.rows) ? clean.rows.slice(0, 4) : [];
+  while (rows.length < 4) rows.push({});
+  return {
+    title: fitText(clean.title || 'Plan d’action opérationnel', 70, 9),
+    subtitle: fitText(clean.subtitle || 'Méthode cible', 32, 4),
+    rows: rows.map((row, index) => ({
+      icon: row.icon || '•',
+      text: fitRow(ensureColon(nonEmpty(row.text, defaultRows()[index])))
+    }))
+  };
+}
+
+function fallbackSections(sourceSlides) {
+  const contentSlides = sourceSlides.slice(1).filter(slide => slide.rawText).slice(0, 12);
+  return [{
+    name: 'Synthèse',
+    slides: contentSlides.map(slide => ({
+      originalSlideIndex: slide.slideIndex,
+      layout: 'C',
+      content: normalizeContent('C', {
+        title: firstWords(slide.rawText, 8) || `Slide ${slide.slideIndex}`,
+        subtitle: 'Points clés',
+        rows: chunkText(slide.rawText).map(text => ({ icon: '•', text }))
+      })
+    }))
+  }];
+}
+
+function flattenStateSlides(state) {
+  const slides = [{ slideIndex: 1, rawText: [state.title, state.subtitle, state.subsubtitle, state.date].join(' ') }];
+  let index = 2;
+  (state.sections || []).forEach(section => {
+    (section.slides || []).forEach(slide => {
+      slides.push({ slideIndex: index, rawText: collectText(slide.content).join(' ') });
+      index += 1;
+    });
+  });
+  return slides;
+}
+
+function collectText(value, out = []) {
+  if (typeof value === 'string') out.push(value);
+  else if (Array.isArray(value)) value.forEach(item => collectText(item, out));
+  else if (value && typeof value === 'object') Object.values(value).forEach(item => collectText(item, out));
+  return out;
+}
+
+function removeEmDash(value) {
+  if (typeof value === 'string') return value.replace(/[\u2013\u2014]/g, '-');
+  if (Array.isArray(value)) return value.map(removeEmDash);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, removeEmDash(val)]));
+  }
+  return value;
+}
+
+function ensureArray(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (!value) return [];
+  return String(value).split(/\n|;/).map(item => item.trim()).filter(Boolean);
+}
+
+function fillList(value, count, defaults) {
+  const list = ensureArray(value);
+  while (list.length < count) list.push(defaults[list.length] || defaults[defaults.length - 1]);
+  return list.map(item => nonEmpty(item, defaults[0]));
+}
+
+function nonEmpty(value, fallback) {
+  const text = String(value || '').trim();
+  return text || fallback;
+}
+
+function ensureColon(value) {
+  const text = String(value || '').trim();
+  if (text.includes(':')) return text;
+  const words = text.split(/\s+/).filter(Boolean);
+  const label = words.slice(0, 2).join(' ') || 'Action';
+  const body = words.slice(2).join(' ') || 'préciser les responsabilités et les résultats attendus';
+  return `${label}: ${body}`;
+}
+
+function fitLabel(value) {
+  return fitText(value, 14, 2).replace(/[^\p{L}\p{N}\s]/gu, '').toUpperCase() || 'AXE';
+}
+
+function fitSentence(value, maxChars, maxWords) {
+  const text = fitText(value, maxChars, maxWords);
+  return text.replace(/[.;:,]+$/g, '') + '.';
+}
+
+function fitRow(value) {
+  const text = fitText(value, 130, 18);
+  const colonIndex = text.indexOf(':');
+  if (colonIndex < 0) return ensureColon(text);
+  const label = fitText(text.slice(0, colonIndex), 24, 3);
+  const body = fitText(text.slice(colonIndex + 1).trim(), 100, 15);
+  return `${label}: ${body}`;
+}
+
+function fitText(value, maxChars, maxWords) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  let text = words.slice(0, maxWords).join(' ');
+  while (text.length > maxChars && text.includes(' ')) text = text.replace(/\s+\S+$/, '');
+  return text || words[0] || '';
+}
+
+function normalizeKeywords(keywords, column, count) {
+  const text = [column.intro, ...(Array.isArray(column.bullets) ? column.bullets : [])].join(' ');
+  const provided = ensureArray(keywords)
+    .map(item => fitText(item, 28, 3))
+    .filter(item => item && text.toLowerCase().includes(item.toLowerCase()));
+  const derived = deriveKeywords(text);
+  const merged = [...provided, ...derived].filter((item, index, arr) => {
+    return item && arr.findIndex(other => other.toLowerCase() === item.toLowerCase()) === index;
+  });
+  return merged.slice(0, count);
+}
+
+function deriveKeywords(text) {
+  const stop = new Set('avec dans pour les des une aux sur par afin cette leurs sont plus moins vers entre comme ces actions resultats résultats priorites priorités operationnelles opérationnelles'.split(' '));
+  return String(text || '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .split(/\s+/)
+    .map(word => word.trim())
+    .filter(word => word.length > 5 && !stop.has(word.toLowerCase()))
+    .slice(0, 6);
+}
+
+function defaultRows() {
+  return [
+    'Cadrage: définir le périmètre, les responsabilités et les priorités de travail',
+    'Exécution: déployer les actions clés avec un pilotage régulier',
+    'Suivi: mesurer les résultats, les risques et les points de blocage',
+    'Ajustement: capitaliser sur les apprentissages et renforcer le dispositif'
+  ];
+}
+
+function firstWords(text, count) {
+  return String(text || '').split(/\s+/).filter(Boolean).slice(0, count).join(' ');
+}
+
+function chunkText(text) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return defaultRows();
+  const rows = [];
+  const size = Math.max(10, Math.ceil(words.length / 4));
+  for (let i = 0; i < words.length && rows.length < 4; i += size) {
+    rows.push(ensureColon(words.slice(i, i + size).join(' ')));
+  }
+  while (rows.length < 4) rows.push(defaultRows()[rows.length]);
+  return rows;
+}
+
+module.exports = { analyzePresentation, regenerateSlide, regeneratePresentation };

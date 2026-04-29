@@ -1,0 +1,397 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const JSZip = require('jszip');
+
+const SLIDE_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml';
+const SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
+async function buildPptxBuffer(state) {
+  const templatePath = findTemplatePath();
+  if (!templatePath) throw new Error('Template So Far.pptx est introuvable.');
+
+  const zip = await JSZip.loadAsync(fs.readFileSync(templatePath));
+  const template = await readTemplate(zip);
+  const plannedSlides = planSlides(state);
+
+  removeGeneratedSlideParts(zip);
+  for (let index = 0; index < plannedSlides.length; index += 1) {
+    const slideNo = index + 1;
+    const planned = plannedSlides[index];
+    const renderedXml = renderTemplateSlide(template, planned.templateSlide, planned.data);
+    const relsXml = renderSlideRels(template, planned.templateSlide);
+    zip.file(`ppt/slides/slide${slideNo}.xml`, renderedXml);
+    zip.file(`ppt/slides/_rels/slide${slideNo}.xml.rels`, relsXml);
+  }
+
+  zip.file('ppt/presentation.xml', await renderPresentationXml(zip, plannedSlides.length));
+  zip.file('ppt/_rels/presentation.xml.rels', await renderPresentationRels(zip, plannedSlides.length));
+  zip.file('[Content_Types].xml', await renderContentTypes(zip, plannedSlides.length));
+  await updateAppSlideCount(zip, plannedSlides.length);
+
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+function findTemplatePath() {
+  const candidates = ['Template So Far.pptx', 'Template_So_Far.pptx'];
+  for (const name of candidates) {
+    const fullPath = path.join(__dirname, name);
+    if (fs.existsSync(fullPath)) return fullPath;
+  }
+  return null;
+}
+
+async function readTemplate(zip) {
+  const slideNames = Object.keys(zip.files)
+    .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a, b) => slideNo(a) - slideNo(b));
+
+  const slides = {};
+  for (const name of slideNames) {
+    const no = slideNo(name);
+    const xml = await zip.file(name).async('string');
+    const relName = `ppt/slides/_rels/slide${no}.xml.rels`;
+    slides[no] = {
+      xml,
+      rels: zip.file(relName) ? await zip.file(relName).async('string') : emptyRels(),
+      shapes: extractTextShapes(xml)
+    };
+  }
+  return { slides };
+}
+
+function extractTextShapes(xml) {
+  const shapes = [];
+  let order = 0;
+  for (const match of xml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)) {
+    const shapeXml = match[0];
+    if (!shapeXml.includes('<p:txBody>')) {
+      order += 1;
+      continue;
+    }
+    const id = (shapeXml.match(/<p:cNvPr\b[^>]*\bid="([^"]+)"/) || [])[1];
+    const name = (shapeXml.match(/<p:cNvPr\b[^>]*\bname="([^"]*)"/) || [])[1] || '';
+    const texts = [...shapeXml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(item => unescapeXml(item[1]));
+    const rawText = texts.join('');
+    shapes.push({ order, id, name, rawText, xml: shapeXml });
+    order += 1;
+  }
+  return shapes;
+}
+
+function planSlides(state) {
+  const slides = [
+    { templateSlide: 1, data: { type: 'title', state } },
+    { templateSlide: 2, data: { type: 'agenda', state } }
+  ];
+
+  (state.sections || []).forEach((section, sectionIndex) => {
+    slides.push({ templateSlide: 3, data: { type: 'section', section, sectionIndex } });
+    (section.slides || []).forEach(slide => {
+      slides.push({
+        templateSlide: slide.layout === 'A' ? 4 : slide.layout === 'B' ? 5 : 6,
+        data: { type: 'content', slide }
+      });
+    });
+  });
+
+  slides.push({ templateSlide: 7, data: { type: 'closing', state } });
+  return slides;
+}
+
+function renderTemplateSlide(template, templateSlide, data) {
+  const slide = template.slides[templateSlide];
+  if (!slide) throw new Error(`Slide template ${templateSlide} introuvable.`);
+  let xml = slide.xml;
+  const shapes = slide.shapes;
+
+  if (data.type === 'title') {
+    xml = injectTextPreserve(xml, findShape(shapes, 'Title', 0).id, [data.state.title]);
+    xml = injectTextPreserve(xml, findShape(shapes, 'Sub-Title', 1).id, [data.state.subtitle]);
+    xml = injectTextPreserve(xml, findShape(shapes, 'Sub-Sub-Title', 2).id, [data.state.subsubtitle]);
+    xml = injectTextPreserve(xml, findShape(shapes, '19 février 2026', 3).id, [data.state.date]);
+  } else if (data.type === 'agenda') {
+    const agendaShape = findByText(shapes, 'Agenda') || shapes[0];
+    const listShape = shapes.find(shape => shape.id !== agendaShape.id && shape.rawText.includes('Rubrique')) || shapes[1];
+    const items = (data.state.sections || []).slice(0, 4).map(section => section.name || 'Rubrique');
+    while (items.length < 4) items.push('');
+    xml = injectTextPreserve(xml, agendaShape.id, ['Agenda']);
+    xml = injectTextPreserve(xml, listShape.id, items);
+  } else if (data.type === 'section') {
+    const nameShape = shapes.find(shape => shape.rawText.includes('Rubrique')) || shapes[0];
+    const numberShape = shapes.find(shape => /\d\d\./.test(shape.rawText)) || shapes[shapes.length - 1];
+    xml = injectTextPreserve(xml, nameShape.id, [data.section.name]);
+    xml = injectTextPreserve(xml, numberShape.id, [`${String(data.sectionIndex + 1).padStart(2, '0')}.`]);
+  } else if (data.type === 'content') {
+    xml = renderContentSlide(xml, shapes, data.slide);
+  }
+
+  return stripEmDashes(xml);
+}
+
+function renderContentSlide(xml, shapes, slide) {
+  const content = slide.content || {};
+  if (slide.layout === 'A') {
+    const columns = ensureArray(content.columns, 2);
+    const map = mapLayoutAShapes(shapes);
+    xml = injectTextPreserve(xml, map.title.id, [content.title]);
+    xml = injectTextPreserve(xml, map.leftHeader.id, [columns[0].label || 'AXE']);
+    xml = injectAxisContentPreserve(xml, map.leftBody.id, columns[0]);
+    xml = injectTextPreserve(xml, map.bridge.id, [content.bridge || bridgeFromColumns(columns)]);
+    xml = injectAxisContentPreserve(xml, map.rightBody.id, columns[1]);
+    xml = injectTextPreserve(xml, map.rightHeader.id, [columns[1].label || 'AXE']);
+    return xml;
+  }
+
+  if (slide.layout === 'B') {
+    const columns = ensureArray(content.columns, 3);
+    const map = mapLayoutBShapes(shapes);
+    xml = injectTextPreserve(xml, map.title.id, [content.title]);
+    columns.forEach((column, index) => {
+      xml = injectTextPreserve(xml, map.headers[index].id, [column.header || `Levier ${index + 1}`]);
+      xml = injectTextPreserve(xml, map.bodies[index].id, [column.body || '']);
+    });
+    return xml;
+  }
+
+  const rows = ensureArray(content.rows, 4).slice(0, 4);
+  const map = mapLayoutCShapes(shapes);
+  xml = injectTextPreserve(xml, map.title.id, [content.title]);
+  xml = injectTextPreserve(xml, map.subtitle.id, [content.subtitle || '']);
+  rows.forEach((row, index) => {
+    const pair = splitRow(row.text || defaultRow(index), index);
+    xml = injectTextPreserve(xml, map.rows[index].id, pair);
+  });
+  return xml;
+}
+
+function mapLayoutAShapes(shapes) {
+  return {
+    title: shapes[0],
+    leftHeader: shapes[1],
+    leftBody: shapes[2],
+    bridge: shapes[3],
+    rightBody: shapes[4],
+    rightHeader: shapes[5]
+  };
+}
+
+function mapLayoutBShapes(shapes) {
+  return {
+    title: shapes[0],
+    bodies: [shapes[2], shapes[4], shapes[6]],
+    headers: [shapes[3], shapes[5], shapes[7]]
+  };
+}
+
+function mapLayoutCShapes(shapes) {
+  return {
+    title: shapes[0],
+    rows: [shapes[1], shapes[2], shapes[3], shapes[4]],
+    subtitle: shapes[5]
+  };
+}
+
+function findShape(shapes, text, fallbackIndex) {
+  return findByText(shapes, text) || shapes[fallbackIndex] || shapes[0];
+}
+
+function findByText(shapes, text) {
+  return shapes.find(shape => shape.rawText.trim() === text) || shapes.find(shape => shape.rawText.includes(text));
+}
+
+function injectTextPreserve(xml, id, values, keywords = []) {
+  return replaceShapeXml(xml, id, shapeXml => {
+    const paragraphs = [...shapeXml.matchAll(/<a:p\b[\s\S]*?<\/a:p>/g)].map(match => match[0]);
+    if (!paragraphs.length) return shapeXml;
+    let paragraphIndex = 0;
+    return shapeXml.replace(/<a:p\b[\s\S]*?<\/a:p>/g, paragraphXml => {
+      const value = paragraphIndex < values.length ? values[paragraphIndex] : '';
+      const next = paragraphs.length === 1 && values.length > 1
+        ? replaceParagraphRunsSequential(paragraphXml, values)
+        : replaceParagraphText(paragraphXml, value, keywords);
+      paragraphIndex += 1;
+      return next;
+    });
+  });
+}
+
+function injectAxisContentPreserve(xml, id, column) {
+  const values = [column?.intro || '', ...ensureArray(column?.bullets, 3).slice(0, 3)];
+  const keywords = ensureArray(column?.keywords, 0);
+  return replaceShapeXml(xml, id, shapeXml => {
+    let index = 0;
+    return shapeXml.replace(/<a:p\b[\s\S]*?<\/a:p>/g, paragraphXml => {
+      const value = index < values.length ? values[index] : '';
+      index += 1;
+      return replaceParagraphText(paragraphXml, value, keywords);
+    });
+  });
+}
+
+function replaceShapeXml(xml, id, transform) {
+  const pos = xml.indexOf(`id="${id}"`);
+  if (pos === -1) return xml;
+  const sp0 = xml.lastIndexOf('<p:sp', pos);
+  const sp1 = xml.indexOf('</p:sp>', pos) + 7;
+  if (sp0 < 0 || sp1 < 7) return xml;
+  const block = xml.slice(sp0, sp1);
+  return xml.slice(0, sp0) + transform(block) + xml.slice(sp1);
+}
+
+function replaceParagraphText(paragraphXml, value, keywords = []) {
+  const cleanKeywords = ensureArray(keywords, 0).filter(keyword => String(value || '').toLowerCase().includes(String(keyword).toLowerCase()));
+  if (cleanKeywords.length) return replaceParagraphWithKeywordRuns(paragraphXml, value, cleanKeywords);
+  return replaceParagraphRunsSequential(paragraphXml, [value]);
+}
+
+function replaceParagraphRunsSequential(paragraphXml, values) {
+  let index = 0;
+  return paragraphXml.replace(/<a:t>([\s\S]*?)<\/a:t>/g, () => {
+    const value = index < values.length ? values[index] : '';
+    index += 1;
+    return `<a:t>${escapeXml(value)}</a:t>`;
+  });
+}
+
+function replaceParagraphWithKeywordRuns(paragraphXml, text, keywords) {
+  const firstRun = (paragraphXml.match(/<a:r\b[\s\S]*?<\/a:r>/) || [])[0];
+  if (!firstRun) return replaceParagraphRunsSequential(paragraphXml, [text]);
+  const firstRPr = (firstRun.match(/<a:rPr\b[\s\S]*?<\/a:rPr>/) || [])[0] || '<a:rPr/>';
+  const runs = makeRunsFromTemplate(text, keywords, firstRPr);
+  const withoutRuns = paragraphXml.replace(/<a:r\b[\s\S]*?<\/a:r>/g, '');
+  if (withoutRuns.includes('<a:endParaRPr')) return withoutRuns.replace(/<a:endParaRPr\b/, `${runs}<a:endParaRPr`);
+  return withoutRuns.replace('</a:p>', `${runs}</a:p>`);
+}
+
+function makeRunsFromTemplate(text, keywords, rPrXml) {
+  const cleanKeywords = (keywords || []).map(String).filter(Boolean);
+  if (!cleanKeywords.length) return makeTemplateRun(text, rPrXml, false);
+  const re = new RegExp(`(${cleanKeywords.map(escapeRegExp).join('|')})`, 'gi');
+  return String(text || '').split(re).filter(Boolean).map(part => {
+    const bold = cleanKeywords.some(keyword => keyword.toLowerCase() === part.toLowerCase());
+    return makeTemplateRun(part, rPrXml, bold);
+  }).join('');
+}
+
+function makeTemplateRun(text, rPrXml, bold) {
+  return `<a:r>${setRunBold(rPrXml, bold)}<a:t>${escapeXml(text)}</a:t></a:r>`;
+}
+
+function setRunBold(rPrXml, bold) {
+  if (/\sb="[01]"/.test(rPrXml)) return rPrXml.replace(/\sb="[01]"/, ` b="${bold ? 1 : 0}"`);
+  return rPrXml.replace('<a:rPr', `<a:rPr b="${bold ? 1 : 0}"`);
+}
+
+function renderSlideRels(template, templateSlide) {
+  return (template.slides[templateSlide]?.rels || emptyRels())
+    .replace(/<Relationship\b(?=[^>]*notesSlide)[^>]*\/>/g, '')
+    .replace(/<Relationship\b(?=[^>]*relationships\/slide")[^>]*\/>/g, '');
+}
+
+async function renderPresentationXml(zip, count) {
+  let xml = await zip.file('ppt/presentation.xml').async('string');
+  const ids = Array.from({ length: count }, (_, index) => `<p:sldId id="${256 + index}" r:id="rId${1000 + index}"/>`).join('');
+  return xml.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, `<p:sldIdLst>${ids}</p:sldIdLst>`);
+}
+
+async function renderPresentationRels(zip, count) {
+  let xml = await zip.file('ppt/_rels/presentation.xml.rels').async('string');
+  xml = xml.replace(/<Relationship\b(?=[^>]*relationships\/slide")[^>]*\/>/g, '');
+  const slideRels = Array.from({ length: count }, (_, index) => {
+    return `<Relationship Id="rId${1000 + index}" Type="${SLIDE_REL_TYPE}" Target="slides/slide${index + 1}.xml"/>`;
+  }).join('');
+  return xml.replace('</Relationships>', `${slideRels}</Relationships>`);
+}
+
+async function renderContentTypes(zip, count) {
+  let xml = await zip.file('[Content_Types].xml').async('string');
+  xml = xml.replace(/<Override\b(?=[^>]*presentationml\.slide\+xml)[^>]*\/>/g, '');
+  const overrides = Array.from({ length: count }, (_, index) => {
+    return `<Override ContentType="${SLIDE_CONTENT_TYPE}" PartName="/ppt/slides/slide${index + 1}.xml"/>`;
+  }).join('');
+  return xml.replace('</Types>', `${overrides}</Types>`);
+}
+
+async function updateAppSlideCount(zip, count) {
+  if (!zip.file('docProps/app.xml')) return;
+  const xml = await zip.file('docProps/app.xml').async('string');
+  zip.file('docProps/app.xml', xml.replace(/<Slides>\d+<\/Slides>/, `<Slides>${count}</Slides>`));
+}
+
+function removeGeneratedSlideParts(zip) {
+  Object.keys(zip.files)
+    .filter(name => /^ppt\/slides\/(slide\d+\.xml|_rels\/slide\d+\.xml\.rels)$/i.test(name))
+    .forEach(name => zip.remove(name));
+}
+
+function slideNo(name) {
+  return Number((name.match(/slide(\d+)\.xml/) || [])[1] || 0);
+}
+
+function splitRow(text, index) {
+  const value = s(text);
+  const colon = value.indexOf(':');
+  if (colon > 0 && colon < 34) return [value.slice(0, colon + 1), ` ${value.slice(colon + 1).trim()}`];
+  const words = value.split(/\s+/).filter(Boolean);
+  const label = words.slice(0, 3).join(' ') || `Point ${index + 1}:`;
+  const body = words.slice(3).join(' ');
+  return [label.endsWith(':') ? label : `${label}:`, body ? ` ${body}` : ''];
+}
+
+function defaultRow(index) {
+  return [
+    'Cadrage: définir le périmètre et les responsabilités',
+    'Exécution: déployer les actions prioritaires avec un pilotage régulier',
+    'Suivi: mesurer les résultats et traiter les points de blocage',
+    'Ajustement: capitaliser sur les apprentissages et renforcer le dispositif'
+  ][index] || 'Action: préciser les responsabilités et les résultats attendus';
+}
+
+function bridgeFromColumns(columns) {
+  const left = columns[0]?.label || 'Premier axe';
+  const right = columns[1]?.label || 'second axe';
+  return `${left} et ${right} structurent les priorités à traiter et les décisions opérationnelles à engager.`;
+}
+
+function ensureArray(value, min) {
+  const arr = Array.isArray(value) ? value.slice() : value == null ? [] : [value];
+  while (arr.length < min) arr.push('');
+  return arr;
+}
+
+function emptyRels() {
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+}
+
+function stripEmDashes(value) {
+  return String(value || '').replace(/[\u2013\u2014]/g, '-');
+}
+
+function s(value) {
+  return stripEmDashes(value == null ? '' : value);
+}
+
+function escapeXml(value) {
+  return s(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function unescapeXml(value) {
+  return String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+module.exports = { buildPptxBuffer };

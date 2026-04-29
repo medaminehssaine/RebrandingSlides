@@ -1,436 +1,1094 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Slide Generator</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rebranding PPTX | ASCENCE ADVISORY</title>
+  <style>
+    :root {
+      --maroon: #5C1A35;
+      --maroon-dark: #421125;
+      --maroon-soft: #f4eaf0;
+      --ink: #191719;
+      --muted: #706870;
+      --line: #e7dde3;
+      --line-strong: #d7c7d0;
+      --soft: #fbf8fa;
+      --panel: #ffffff;
+      --white: #fff;
+      --focus: 0 0 0 3px rgba(92, 26, 53, .14);
+      --shadow: 0 22px 70px rgba(55, 20, 36, .12);
+      --shadow-sm: 0 10px 28px rgba(55, 20, 36, .08);
+    }
 
-  body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: #f7f6f4;
-    color: #1a1a1a;
-    min-height: 100vh;
-  }
+    * { box-sizing: border-box; }
 
-  header {
-    background: #fff;
-    border-bottom: 1px solid #ebebeb;
-    padding: 14px 32px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .logo {
-    width: 32px; height: 32px;
-    background: linear-gradient(135deg, #3D1A2B, #7a3250);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 15px;
-  }
-  header h1 { font-size: 16px; font-weight: 700; color: #1a1a1a; }
-  header .sub { font-size: 12px; color: #aaa; margin-left: 2px; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Calibri, Arial, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(135deg, rgba(92, 26, 53, .06), transparent 32%),
+        linear-gradient(315deg, rgba(92, 26, 53, .04), transparent 28%),
+        var(--soft);
+    }
 
-  .container { max-width: 820px; margin: 36px auto; padding: 0 20px; }
+    button, input, textarea, select { font: inherit; }
 
-  .card {
-    background: #fff;
-    border: 1px solid #e8e8e8;
-    border-radius: 14px;
-    padding: 24px;
-    margin-bottom: 16px;
-  }
-  .card-title {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .6px;
-    color: #7a3250;
-    margin-bottom: 14px;
-  }
+    button {
+      border: 0;
+      border-radius: 0;
+      background: var(--maroon);
+      color: var(--white);
+      padding: 11px 16px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: .01em;
+      transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
+      box-shadow: 0 8px 18px rgba(92, 26, 53, .16);
+    }
 
-  textarea {
-    width: 100%;
-    border: 1.5px solid #e0e0e0;
-    border-radius: 10px;
-    padding: 13px 15px;
-    font-size: 14px;
-    line-height: 1.65;
-    resize: vertical;
-    min-height: 150px;
-    outline: none;
-    transition: border .18s;
-    font-family: inherit;
-    color: #1a1a1a;
-    background: #fafafa;
-  }
-  textarea:focus { border-color: #7a3250; background: #fff; }
-  textarea::placeholder { color: #bbb; }
+    button:hover { background: var(--maroon-dark); transform: translateY(-1px); }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+      border-color: var(--maroon);
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    button:disabled:hover { transform: none; }
 
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 10px 20px;
-    border-radius: 9px;
-    font-size: 13.5px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    transition: all .15s;
-    white-space: nowrap;
-  }
-  .btn-primary { background: #3D1A2B; color: #fff; }
-  .btn-primary:hover { background: #2e1220; transform: translateY(-1px); }
-  .btn-ghost { background: #f0f0f0; color: #444; }
-  .btn-ghost:hover { background: #e6e6e6; }
-  .btn-green { background: #16a34a; color: #fff; }
-  .btn-green:hover { background: #15803d; }
-  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
+    .screen { min-height: 100vh; }
 
-  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .upload-screen {
+      display: grid;
+      place-items: center;
+      padding: 42px 24px;
+    }
 
-  /* Preview */
-  .slide-preview {
-    border: 1.5px solid #e8e8e8;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-top: 14px;
-    background: #fafafa;
-  }
-  .preview-header {
-    padding: 10px 14px;
-    background: #f4f1f2;
-    border-bottom: 1px solid #e8e8e8;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-  .preview-title {
-    font-size: 15px;
-    font-weight: 700;
-    color: #3D1A2B;
-  }
-  .preview-sub {
-    font-size: 12px;
-    color: #7a5060;
-    font-style: italic;
-  }
-  .preview-axes {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-  }
-  .preview-axis {
-    padding: 14px 16px;
-    border-right: 1px solid #e8e8e8;
-  }
-  .preview-axis:last-child { border-right: none; }
-  .axis-header {
-    font-size: 12px;
-    font-weight: 700;
-    color: #3D1A2B;
-    text-transform: uppercase;
-    letter-spacing: .4px;
-    margin-bottom: 8px;
-    padding-bottom: 6px;
-    border-bottom: 2px solid #3D1A2B;
-    display: inline-block;
-  }
-  .axis-item {
-    font-size: 12px;
-    color: #475569;
-    line-height: 1.55;
-    margin-bottom: 4px;
-    padding-left: 0;
-  }
-  .axis-item.bullet {
-    padding-left: 14px;
-    position: relative;
-    color: #3D1A2B;
-  }
-  .axis-item.bullet::before {
-    content: "•";
-    position: absolute;
-    left: 2px;
-    color: #3D1A2B;
-  }
-  .axis-item .kw { font-weight: 700; }
+    .upload-card {
+      width: min(760px, 100%);
+      background: rgba(255, 255, 255, .94);
+      border: 1px solid var(--line);
+      padding: 38px;
+      box-shadow: var(--shadow);
+      border-radius: 8px;
+    }
 
-  /* Download card */
-  .ready-box {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: #f0faf4;
-    border: 1px solid #bbf0d1;
-    border-radius: 10px;
-    padding: 14px 18px;
-    margin-top: 4px;
-    font-size: 13px;
-    color: #14532d;
-  }
-  .ready-icon { font-size: 20px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--maroon);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      margin-bottom: 14px;
+    }
 
-  .drive-link {
-    background: #fff8f0;
-    border: 1px solid #fdd8b0;
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 13px;
-    color: #7c3400;
-    margin-top: 10px;
-  }
-  .drive-link a { color: #7a3250; font-weight: 600; }
+    .brand::before {
+      content: "";
+      width: 28px;
+      height: 28px;
+      background: var(--maroon);
+      box-shadow: inset 9px 0 0 rgba(255, 255, 255, .18);
+    }
 
-  /* Status */
-  .status {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 12px;
-    color: #888;
-    margin-top: 14px;
-  }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; }
-  .dot.on { background: #22c55e; }
-  .dot.spinning { background: #7a3250; animation: pulse .8s infinite alternate; }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(34px, 4vw, 48px);
+      line-height: 1.1;
+      color: var(--maroon);
+      letter-spacing: 0;
+    }
 
-  @keyframes pulse { to { opacity: .3; } }
+    .drop-zone {
+      border: 1px dashed var(--line-strong);
+      background:
+        linear-gradient(180deg, #fff, #fdfafb);
+      padding: 34px;
+      text-align: center;
+      margin: 28px 0 18px;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    }
 
-  .spinner {
-    display: inline-block;
-    width: 14px; height: 14px;
-    border: 2px solid rgba(255,255,255,.35);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin .65s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+    .drop-zone:hover, .drop-zone.active {
+      border-color: var(--maroon);
+      background: var(--maroon-soft);
+      transform: translateY(-1px);
+    }
 
-  .error {
-    background: #fef2f2;
-    border: 1px solid #fca5a5;
-    color: #991b1b;
-    border-radius: 8px;
-    padding: 11px 14px;
-    font-size: 13px;
-    margin-top: 10px;
-  }
+    .drop-zone strong {
+      display: block;
+      color: var(--maroon);
+      font-size: 18px;
+      margin-bottom: 6px;
+    }
 
-  code {
-    background: #f3f3f3;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-size: 12px;
-    color: #3D1A2B;
-  }
+    .drop-zone::after {
+      content: "Fichiers PowerPoint uniquement";
+      color: var(--muted);
+      font-size: 13px;
+    }
 
-  .setup-step {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    margin-bottom: 8px;
-  }
-  .step-num {
-    min-width: 22px; height: 22px;
-    background: #3D1A2B;
-    color: #fff;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700;
-    margin-top: 1px;
-  }
-  .step-body { font-size: 13px; color: #444; line-height: 1.6; }
-</style>
+    .file-name {
+      margin-top: 12px;
+      color: var(--maroon);
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    label {
+      display: block;
+      color: var(--maroon);
+      font-weight: 700;
+      margin: 18px 0 7px;
+      font-size: 13px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      padding: 11px 12px;
+      color: var(--ink);
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.42;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .status { color: var(--muted); font-size: 14px; line-height: 1.35; }
+    .hidden { display: none !important; }
+
+    .loading {
+      margin-top: 22px;
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      color: var(--muted);
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 10px;
+      border-radius: 6px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border: 1px solid var(--maroon);
+      background: #fff;
+    }
+
+    .step.active .dot, .step.done .dot { background: var(--maroon); }
+    .step.active { color: var(--maroon); font-weight: 700; }
+
+    .preview-screen {
+      display: grid;
+      grid-template-columns: 304px 1fr;
+      height: 100vh;
+      background: var(--soft);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: #f8f4f6;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .sidebar-head {
+      padding: 20px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .sidebar-head strong {
+      display: block;
+      color: var(--maroon);
+      font-size: 18px;
+      margin-bottom: 3px;
+    }
+
+    .slide-list {
+      overflow: auto;
+      padding: 14px;
+    }
+
+    .thumb {
+      background: rgba(255, 255, 255, .96);
+      border: 1px solid var(--line);
+      padding: 12px;
+      margin-bottom: 11px;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      min-height: 82px;
+      position: relative;
+      border-radius: 8px;
+      transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+
+    .thumb:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+    .thumb.active { border-color: var(--maroon); box-shadow: inset 4px 0 0 var(--maroon), var(--shadow-sm); }
+    .thumb.dragging { opacity: .45; }
+    .thumb.drop-target { outline: 2px solid var(--maroon); }
+    .handle {
+      cursor: grab;
+      color: var(--maroon);
+      font-weight: 700;
+      user-select: none;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      background: var(--maroon-soft);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .handle.locked { cursor: default; color: #b3aab0; }
+    .thumb-title { font-weight: 700; color: var(--maroon); font-size: 13px; }
+    .thumb-text { color: var(--muted); font-size: 12px; line-height: 1.3; margin-top: 6px; max-height: 34px; overflow: hidden; }
+
+    .main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .toolbar {
+      min-height: 72px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 24px;
+      gap: 12px;
+      background: rgba(255, 255, 255, .92);
+      backdrop-filter: blur(10px);
+    }
+
+    .toolbar-title {
+      color: var(--maroon);
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .editor {
+      overflow: auto;
+      padding: 28px;
+      background:
+        linear-gradient(180deg, #fff, var(--soft));
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 620px) minmax(300px, 1fr);
+      gap: 28px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .96);
+      padding: 22px;
+      border-radius: 8px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .panel h2 {
+      margin: 0 0 16px;
+      color: var(--maroon);
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .mini-slide {
+      aspect-ratio: 16 / 9;
+      border: 1px solid var(--line);
+      background: #fff;
+      position: sticky;
+      top: 24px;
+      overflow: hidden;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .mini-title { display: grid; grid-template-columns: 40% 60%; height: 100%; }
+    .mini-left { background: var(--maroon); color: #fff; padding: 20px; display: flex; align-items: end; font-weight: 700; }
+    .mini-right { padding: 38px 30px; }
+    .mini-right h3, .mini-content h3 { margin: 0 0 8px; color: var(--maroon); font-size: 22px; line-height: 1.1; }
+    .mini-right p, .mini-content p { margin: 6px 0; color: var(--muted); }
+    .mini-agenda, .mini-section, .mini-closing, .mini-content { height: 100%; padding: 28px; }
+    .mini-agenda { border-left: 14px solid var(--maroon); }
+    .mini-agenda ol { margin-top: 18px; }
+    .mini-section { display: flex; gap: 28px; align-items: center; color: var(--maroon); }
+    .mini-section .num { font-size: 48px; font-weight: 700; }
+    .mini-closing { background: var(--maroon); color: #fff; display: grid; place-items: center; text-align: center; font-weight: 700; letter-spacing: .05em; }
+    .mini-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .mini-box { border: 1px solid var(--line); min-height: 92px; padding: 10px; font-size: 12px; border-radius: 6px; background: #fff; }
+    .mini-label { background: var(--maroon); color: #fff; padding: 5px; text-align: center; font-size: 11px; font-weight: 700; }
+
+    .error { color: #a52222; font-weight: 700; }
+
+    body {
+      font-family: Urbanist, Calibri, Arial, sans-serif;
+      background:
+        linear-gradient(120deg, rgba(92, 26, 53, .08), transparent 34%),
+        linear-gradient(300deg, rgba(215, 199, 208, .55), transparent 30%),
+        #fbfafb;
+    }
+
+    button {
+      border-radius: 8px;
+      min-height: 42px;
+      box-shadow: none;
+    }
+
+    select, textarea, input {
+      border-radius: 8px;
+      min-height: 42px;
+    }
+
+    .upload-screen {
+      align-items: center;
+      background:
+        linear-gradient(90deg, #fff 0, #fff 50%, rgba(92, 26, 53, .045) 50%, rgba(92, 26, 53, .045) 100%);
+    }
+
+    .upload-card {
+      position: relative;
+      width: min(920px, 100%);
+      padding: 42px;
+      border-radius: 14px;
+      border: 1px solid rgba(92, 26, 53, .13);
+      box-shadow: 0 30px 90px rgba(47, 18, 32, .14);
+      overflow: hidden;
+    }
+
+    .upload-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 7px;
+      background: var(--maroon);
+    }
+
+    .upload-card h1 {
+      max-width: 620px;
+      font-size: clamp(40px, 6vw, 64px);
+    }
+
+    .upload-card > .status {
+      max-width: 620px;
+      font-size: 15px;
+    }
+
+    .brand {
+      background: var(--maroon-soft);
+      padding: 8px 12px 8px 8px;
+      border-radius: 999px;
+      margin-bottom: 20px;
+    }
+
+    .brand::before {
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+    }
+
+    .drop-zone {
+      padding: 42px 28px;
+      border-radius: 12px;
+      border: 1px dashed rgba(92, 26, 53, .45);
+      background: linear-gradient(180deg, #fff, #fcf8fa);
+    }
+
+    .drop-zone strong {
+      font-size: 21px;
+    }
+
+    .preview-screen {
+      grid-template-columns: 312px minmax(0, 1fr);
+      background: #fbfafb;
+    }
+
+    .sidebar {
+      background: #f5eff3;
+    }
+
+    .sidebar-head {
+      padding: 22px;
+    }
+
+    .thumb {
+      border-radius: 12px;
+      padding: 13px;
+    }
+
+    .handle {
+      border-radius: 9px;
+    }
+
+    .toolbar {
+      min-height: 84px;
+      padding: 14px 24px;
+      align-items: center;
+    }
+
+    .toolbar-title {
+      font-size: 20px;
+    }
+
+    .toolbar-actions {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .toolbar-actions button {
+      white-space: nowrap;
+    }
+
+    .mode-group {
+      min-width: 180px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 4px;
+      padding: 7px 9px;
+      background: #f8f3f6;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .mode-group span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .mode-group select {
+      min-height: 30px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--maroon);
+      font-weight: 700;
+      box-shadow: none;
+    }
+
+    .editor {
+      padding: 30px;
+    }
+
+    .editor-grid {
+      grid-template-columns: minmax(380px, 680px) minmax(360px, 1fr);
+      gap: 30px;
+    }
+
+    .panel, .mini-slide {
+      border-radius: 14px;
+      box-shadow: 0 18px 50px rgba(47, 18, 32, .10);
+    }
+
+    .panel {
+      padding: 24px;
+    }
+
+    .panel h2 {
+      font-size: 26px;
+    }
+
+    @media (max-width: 900px) {
+      .preview-screen { grid-template-columns: 1fr; height: auto; }
+      .sidebar { height: 260px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .main { height: auto; min-height: 70vh; }
+      .editor-grid { grid-template-columns: 1fr; }
+      .toolbar { height: auto; align-items: stretch; flex-direction: column; padding: 14px; }
+      .toolbar-actions { flex-wrap: wrap; }
+      .loading { grid-template-columns: 1fr; }
+      .field-row { grid-template-columns: 1fr; }
+      .upload-card { padding: 24px; }
+    }
+  </style>
 </head>
 <body>
+  <section id="uploadScreen" class="screen upload-screen">
+    <form id="uploadForm" class="upload-card">
+      <div class="brand">ASCENCE ADVISORY</div>
+      <h1>Rebranding PPTX</h1>
+      <p class="status">Importez une présentation PowerPoint, ajoutez un contexte si besoin, puis ajustez les slides avant téléchargement.</p>
 
-<header>
-  <div class="logo">S</div>
-  <h1>Slide Generator</h1>
-  <span class="sub">Proof Of concept
+      <div id="dropZone" class="drop-zone">
+        <input id="fileInput" name="file" type="file" accept=".pptx" class="hidden">
+        <strong>Déposez un .pptx ici ou cliquez pour choisir</strong>
+        <div id="fileName" class="file-name"></div>
+      </div>
 
+      <label for="description">Description optionnelle</label>
+      <textarea id="description" name="description" placeholder="Audience, objectif, ton attendu, éléments à préserver."></textarea>
 
-  </span>
-</header>
+      <div class="actions">
+        <button id="transformButton" type="submit">Transformer</button>
+        <span id="uploadStatus" class="status"></span>
+      </div>
 
-<div class="container">
+      <div id="loading" class="loading hidden">
+        <div class="step" data-step="0"><span class="dot"></span>Lecture des slides...</div>
+        <div class="step" data-step="1"><span class="dot"></span>Analyse du contenu...</div>
+        <div class="step" data-step="2"><span class="dot"></span>Préparation de la présentation...</div>
+      </div>
+    </form>
+  </section>
 
-  <!-- INPUT -->
-  <div class="card">
-    <div class="card-title">Your Text</div>
-    <textarea id="inputText" placeholder="Paste or type your content here. Strategy notes, a brief, a report, anything. The AI will structure it into a two-axis slide."></textarea>
-    <div class="row">
-      <button class="btn btn-primary" id="processBtn" onclick="processText()">
-        <span id="processLabel">Analyse with AI</span>
-      </button>
-      <button class="btn btn-ghost" onclick="document.getElementById('inputText').value=''">Clear</button>
-    </div>
-    <div id="processError" class="error" style="display:none"></div>
-  </div>
+  <section id="previewScreen" class="screen preview-screen hidden">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <strong>Slides</strong>
+        <span class="status">Glissez les slides de contenu pour les réordonner</span>
+      </div>
+      <div id="slideList" class="slide-list"></div>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <div>
+          <div class="toolbar-title">Éditeur de prévisualisation</div>
+          <div id="editorStatus" class="status"></div>
+        </div>
+        <div class="toolbar-actions">
+          <div class="mode-group">
+            <span>Régénération</span>
+            <select id="regenerationMode" aria-label="Densité de régénération">
+            <option value="equilibre">Équilibré</option>
+            <option value="detaille">Plus détaillé</option>
+            <option value="bref">Plus bref</option>
+            <option value="concis">Très concis</option>
+            </select>
+          </div>
+          <button id="regenerateDeckButton" type="button">Régénérer le deck</button>
+          <button id="regenerateButton" type="button">Régénérer la slide</button>
+          <button id="downloadButton" type="button">Télécharger le PPTX</button>
+        </div>
+      </div>
+      <div class="editor">
+        <div class="editor-grid">
+          <div id="editorPanel" class="panel"></div>
+          <div id="miniPreview" class="mini-slide"></div>
+        </div>
+      </div>
+    </main>
+  </section>
 
-  <!-- PREVIEW -->
-  <div class="card" id="resultCard" style="display:none">
-    <div class="card-title">Preview</div>
-    <div id="resultContent"></div>
-    <div class="row">
-      <button class="btn btn-primary" id="generateBtn" onclick="generatePptx()">
-        <span id="genLabel">Generate PPTX</span>
-      </button>
-    </div>
-    <div id="genError" class="error" style="display:none"></div>
-  </div>
+  <script>
+    const uploadScreen = document.getElementById('uploadScreen');
+    const previewScreen = document.getElementById('previewScreen');
+    const uploadForm = document.getElementById('uploadForm');
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const fileName = document.getElementById('fileName');
+    const loading = document.getElementById('loading');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const slideList = document.getElementById('slideList');
+    const editorPanel = document.getElementById('editorPanel');
+    const miniPreview = document.getElementById('miniPreview');
+    const editorStatus = document.getElementById('editorStatus');
+    const regenerationMode = document.getElementById('regenerationMode');
+    const regenerateDeckButton = document.getElementById('regenerateDeckButton');
+    const regenerateButton = document.getElementById('regenerateButton');
+    const downloadButton = document.getElementById('downloadButton');
 
-  <!-- DOWNLOAD -->
-  <div class="card" id="downloadCard" style="display:none">
-    <div class="card-title">Ready</div>
-    <div class="ready-box">
-      <span class="ready-icon">&#10003;</span>
-      <span>Your slide is ready.</span>
-    </div>
-    <div class="row" style="margin-top:16px">
-      <button class="btn btn-ghost" id="dlBtn" onclick="downloadFile()">Download .pptx</button>
-      <button class="btn btn-green" id="driveBtn" onclick="uploadDrive()">
-        <span id="driveLabel">Open in Google Slides</span>
-      </button>
-    </div>
-    <div id="driveResult"></div>
-    <div id="driveError" class="error" style="display:none"></div>
-  </div>
+    let presentationState = null;
+    let activeKey = 'title';
+    let draggingKey = null;
 
-  
-</div>
-
-<script>
-let currentContent = null;
-let currentFile    = null;
-let hasAnalyzed    = false; // ADD THIS
-
-async function processText() {
-  const text = document.getElementById("inputText").value.trim();
-  if (!text) return;
-  const btn = document.getElementById("processBtn");
-  const lbl = document.getElementById("processLabel");
-  const err = document.getElementById("processError");
-  err.style.display = "none";
-  btn.disabled = true;
-  lbl.innerHTML = '<span class="spinner"></span> Thinking...';
-
-  try {
-    const res  = await fetch("/api/process", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text}) });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    currentContent = data.content;
-    renderPreview(data.content);
-    document.getElementById("resultCard").style.display = "block";
-    document.getElementById("downloadCard").style.display = "none";
-    document.getElementById("resultCard").scrollIntoView({ behavior:"smooth" });
-  } catch(e) {
-    err.textContent = "Error: " + e.message;
-    err.style.display = "block";
-  } finally {
-    btn.disabled = false;
-    lbl.textContent = "Re-analyze";
-  }
-}
-
-function renderPreview(c) {
-  let html = `<div class="slide-preview">`;
-  html += `<div class="preview-header">
-    <span class="preview-title">${esc(c.title)}</span>
-    <span class="preview-sub">${esc(c.shortParagraph)}</span>
-  </div>`;
-  html += `<div class="preview-axes">`;
-  (c.axes || []).forEach(ax => {
-    html += `<div class="preview-axis">`;
-    html += `<div><span class="axis-header">${esc(ax.header)}</span></div>`;
-    (ax.items || []).forEach(item => {
-      const cls = item.type === "bullet" ? "axis-item bullet" : "axis-item";
-      html += `<div class="${cls}">${highlightKeywords(item.text, ax.keywords || [])}</div>`;
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => showFileName());
+    dropZone.addEventListener('dragover', event => {
+      event.preventDefault();
+      dropZone.classList.add('active');
     });
-    html += `</div>`;
-  });
-  html += `</div></div>`;
-  document.getElementById("resultContent").innerHTML = html;
-}
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+    dropZone.addEventListener('drop', event => {
+      event.preventDefault();
+      dropZone.classList.remove('active');
+      if (event.dataTransfer.files[0]) fileInput.files = event.dataTransfer.files;
+      showFileName();
+    });
 
-function highlightKeywords(text, keywords) {
-  if (!keywords.length) return esc(text);
-  const re = new RegExp(`(${keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")})`, "gi");
-  return esc(text).replace(re, '<span class="kw">$1</span>');
-}
+    uploadForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!fileInput.files[0]) return setUploadStatus('Choisissez d’abord un fichier .pptx.', true);
+      const data = new FormData();
+      data.append('file', fileInput.files[0]);
+      data.append('description', document.getElementById('description').value);
+      setLoading(true);
+      try {
+        const response = await fetch('/api/process', { method: 'POST', body: data });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'Le traitement a échoué.');
+        presentationState = json;
+        activeKey = 'title';
+        uploadScreen.classList.add('hidden');
+        previewScreen.classList.remove('hidden');
+        renderAll();
+      } catch (error) {
+        setUploadStatus(error.message, true);
+      } finally {
+        setLoading(false);
+      }
+    });
 
-function esc(s) {
-  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-}
+    regenerateDeckButton.addEventListener('click', async () => {
+      if (!presentationState) return;
+      editorStatus.textContent = 'Régénération du deck...';
+      regenerateDeckButton.disabled = true;
+      regenerateButton.disabled = true;
+      try {
+        const response = await fetch('/api/regenerate-presentation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: presentationState, mode: regenerationMode.value })
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'La régénération du deck a échoué.');
+        presentationState = json;
+        activeKey = 'title';
+        renderAll();
+        editorStatus.textContent = 'Deck régénéré.';
+      } catch (error) {
+        editorStatus.textContent = error.message;
+      } finally {
+        regenerateDeckButton.disabled = false;
+        renderEditor();
+      }
+    });
 
-async function generatePptx() {
-  if (!currentContent) return;
-  const btn = document.getElementById("generateBtn");
-  const lbl = document.getElementById("genLabel");
-  const err = document.getElementById("genError");
-  err.style.display = "none";
-  btn.disabled = true;
-  lbl.innerHTML = '<span class="spinner"></span> Building slide...';
+    regenerateButton.addEventListener('click', async () => {
+      const active = getActive();
+      if (active.type !== 'content') return;
+      editorStatus.textContent = 'Régénération de la slide...';
+      regenerateButton.disabled = true;
+      try {
+        const response = await fetch('/api/regenerate-slide', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slide: active.slide, layout: active.slide.layout, mode: regenerationMode.value })
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'La régénération a échoué.');
+        Object.assign(active.slide, json);
+        renderAll();
+        editorStatus.textContent = 'Slide régénérée.';
+      } catch (error) {
+        editorStatus.textContent = error.message;
+      } finally {
+        regenerateButton.disabled = false;
+      }
+    });
 
-  try {
-    const res  = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({content:currentContent}) });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    currentFile = data.file;
-    document.getElementById("downloadCard").style.display = "block";
-    document.getElementById("downloadCard").scrollIntoView({ behavior:"smooth" });
-  } catch(e) {
-    err.textContent = "Error: " + e.message;
-    err.style.display = "block";
-  } finally {
-    btn.disabled = false;
-    lbl.textContent = "Generate PPTX";
-  }
-}
+    downloadButton.addEventListener('click', async () => {
+      editorStatus.textContent = 'Construction du PPTX...';
+      downloadButton.disabled = true;
+      try {
+        const response = await fetch('/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(presentationState)
+        });
+        if (!response.ok) {
+          const json = await response.json().catch(() => ({}));
+          throw new Error(json.error || 'Le téléchargement a échoué.');
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'Ascence_Rebrandee.pptx';
+        link.click();
+        URL.revokeObjectURL(url);
+        editorStatus.textContent = 'PPTX téléchargé.';
+      } catch (error) {
+        editorStatus.textContent = error.message;
+      } finally {
+        downloadButton.disabled = false;
+      }
+    });
 
-function downloadFile() {
-  if (currentFile) window.open("/api/download/" + currentFile);
-}
+    function showFileName() {
+      fileName.textContent = fileInput.files[0] ? fileInput.files[0].name : '';
+    }
 
-async function uploadDrive() {
-  if (!currentFile) return;
-  const btn = document.getElementById("driveBtn");
-  const lbl = document.getElementById("driveLabel");
-  const err = document.getElementById("driveError");
-  const res2 = document.getElementById("driveResult");
-  err.style.display = "none";
-  res2.innerHTML = "";
-  btn.disabled = true;
-  lbl.innerHTML = '<span class="spinner"></span> Uploading...';
+    function setUploadStatus(message, isError) {
+      uploadStatus.textContent = message;
+      uploadStatus.className = isError ? 'error' : 'status';
+    }
 
-  try {
-    const res  = await fetch("/api/upload-drive", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({file:currentFile}) });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    res2.innerHTML = `<div class="drive-link">Uploaded. <a href="${data.link}" target="_blank">Open in Google Slides</a></div>`;
-  } catch(e) {
-    err.textContent = e.message.includes("not configured")
-      ? "Google Drive not set up yet. See GDRIVE_SETUP.md."
-      : "Error: " + e.message;
-    err.style.display = "block";
-  } finally {
-    btn.disabled = false;
-    lbl.textContent = "Open in Google Slides";
-  }
-}
+    function setLoading(isLoading) {
+      loading.classList.toggle('hidden', !isLoading);
+      document.getElementById('transformButton').disabled = isLoading;
+      if (!isLoading) return;
+      setUploadStatus('', false);
+      const steps = [...document.querySelectorAll('.step')];
+      steps.forEach(step => step.className = 'step');
+      let index = 0;
+      steps[0].classList.add('active');
+      const timer = setInterval(() => {
+        if (!loading.classList.contains('hidden') && index < steps.length - 1) {
+          steps[index].classList.remove('active');
+          steps[index].classList.add('done');
+          index += 1;
+          steps[index].classList.add('active');
+        } else {
+          clearInterval(timer);
+        }
+      }, 1200);
+    }
 
-(async () => {
-  try {
-    const d = await (await fetch("/api/drive-status")).json();
-    document.getElementById("driveDot").className = "dot" + (d.connected ? " on" : "");
-    document.getElementById("driveStatus").textContent = d.connected
-      ? "Google Drive connected"
-      : "Google Drive not connected";
-  } catch {}
-})();
-</script>
+    function renderAll() {
+      renderSlideList();
+      renderEditor();
+      renderMiniPreview();
+    }
+
+    function flatSlides() {
+      const items = [
+        { key: 'title', type: 'title', title: 'Titre', text: presentationState.title || '' },
+        { key: 'agenda', type: 'agenda', title: 'Agenda', text: (presentationState.sections || []).map(s => s.name).join(', ') }
+      ];
+      (presentationState.sections || []).forEach((section, sectionIndex) => {
+        items.push({ key: `section:${sectionIndex}`, type: 'section', sectionIndex, title: `Section ${sectionIndex + 1}`, text: section.name });
+        (section.slides || []).forEach((slide, slideIndex) => {
+          items.push({
+            key: `content:${sectionIndex}:${slideIndex}`,
+            type: 'content',
+            sectionIndex,
+            slideIndex,
+            title: `Modèle ${slide.layout}`,
+            text: firstLine(slide.content && slide.content.title),
+            slide
+          });
+        });
+      });
+      items.push({ key: 'closing', type: 'closing', title: 'Clôture', text: presentationState.closingTagline || 'ASCENCE ADVISORY' });
+      return items;
+    }
+
+    function renderSlideList() {
+      const items = flatSlides();
+      slideList.innerHTML = '';
+      items.forEach((item, index) => {
+        const thumb = document.createElement('div');
+        thumb.className = `thumb ${item.key === activeKey ? 'active' : ''}`;
+        thumb.dataset.key = item.key;
+        thumb.innerHTML = `
+          <div class="handle ${item.type === 'content' ? '' : 'locked'}">${item.type === 'content' ? '::' : iconFor(item.type)}</div>
+          <div>
+            <div class="thumb-title">${index + 1}. ${escapeHtml(item.title)}</div>
+            <div class="thumb-text">${escapeHtml(item.text || '')}</div>
+          </div>
+        `;
+        thumb.addEventListener('click', () => {
+          activeKey = item.key;
+          renderAll();
+        });
+        const handle = thumb.querySelector('.handle');
+        if (item.type === 'content') {
+          handle.addEventListener('mousedown', event => startDrag(event, item.key));
+        }
+        slideList.appendChild(thumb);
+      });
+    }
+
+    function startDrag(event, key) {
+      event.preventDefault();
+      draggingKey = key;
+      document.querySelector(`[data-key="${cssEscape(key)}"]`).classList.add('dragging');
+      document.addEventListener('mousemove', dragMove);
+      document.addEventListener('mouseup', dragEnd);
+    }
+
+    function dragMove(event) {
+      document.querySelectorAll('.thumb.drop-target').forEach(el => el.classList.remove('drop-target'));
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.thumb');
+      if (target && target.dataset.key.startsWith('content:') && target.dataset.key !== draggingKey) {
+        target.classList.add('drop-target');
+      }
+    }
+
+    function dragEnd(event) {
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.thumb');
+      if (target && draggingKey && target.dataset.key.startsWith('content:') && target.dataset.key !== draggingKey) {
+        moveContentSlide(draggingKey, target.dataset.key);
+      }
+      draggingKey = null;
+      document.removeEventListener('mousemove', dragMove);
+      document.removeEventListener('mouseup', dragEnd);
+      renderAll();
+    }
+
+    function moveContentSlide(fromKey, toKey) {
+      const from = parseContentKey(fromKey);
+      const to = parseContentKey(toKey);
+      const fromSlides = presentationState.sections[from.sectionIndex].slides;
+      const toSlides = presentationState.sections[to.sectionIndex].slides;
+      const [slide] = fromSlides.splice(from.slideIndex, 1);
+      const insertIndex = from.sectionIndex === to.sectionIndex && from.slideIndex < to.slideIndex ? to.slideIndex - 1 : to.slideIndex;
+      toSlides.splice(insertIndex, 0, slide);
+      activeKey = `content:${to.sectionIndex}:${insertIndex}`;
+    }
+
+    function renderEditor() {
+      const active = getActive();
+      regenerateButton.disabled = active.type !== 'content';
+      if (active.type === 'title') return renderTitleEditor();
+      if (active.type === 'agenda') return renderReadOnlyAgenda();
+      if (active.type === 'section') return renderSectionEditor(active);
+      if (active.type === 'content') return renderContentEditor(active.slide);
+      renderClosingEditor();
+    }
+
+    function renderTitleEditor() {
+      editorPanel.innerHTML = `<h2>Slide de titre</h2>${field('Titre', 'title', presentationState.title)}${field('Sous-titre', 'subtitle', presentationState.subtitle)}${field('Sous-sous-titre', 'subsubtitle', presentationState.subsubtitle)}${field('Date', 'date', presentationState.date)}`;
+      bindStateFields();
+    }
+
+    function renderReadOnlyAgenda() {
+      editorPanel.innerHTML = '<h2>Agenda</h2><p class="status">Les rubriques et numéros de page sont générés à partir des sections et des positions réelles des slides.</p>';
+    }
+
+    function renderSectionEditor(active) {
+      const section = presentationState.sections[active.sectionIndex];
+      editorPanel.innerHTML = `<h2>Intercalaire de section</h2>${field('Nom de la section', `sections.${active.sectionIndex}.name`, section.name)}`;
+      bindStateFields();
+    }
+
+    function renderClosingEditor() {
+      editorPanel.innerHTML = `<h2>Slide de clôture</h2>${field('Phrase de clôture', 'closingTagline', presentationState.closingTagline || '')}`;
+      bindStateFields();
+    }
+
+    function renderContentEditor(slide) {
+      editorPanel.innerHTML = `<h2>Slide de contenu</h2>
+        <label>Modèle</label>
+        <select id="layoutSelect">
+          <option value="A" ${slide.layout === 'A' ? 'selected' : ''}>A - Deux colonnes</option>
+          <option value="B" ${slide.layout === 'B' ? 'selected' : ''}>B - Trois cartes</option>
+          <option value="C" ${slide.layout === 'C' ? 'selected' : ''}>C - Liste en lignes</option>
+        </select>
+        <div id="layoutFields"></div>`;
+      document.getElementById('layoutSelect').addEventListener('change', event => {
+        slide.content = mapContent(slide.content, slide.layout, event.target.value);
+        slide.layout = event.target.value;
+        renderAll();
+      });
+      renderLayoutFields(slide);
+    }
+
+    function renderLayoutFields(slide) {
+      const container = document.getElementById('layoutFields');
+      if (slide.layout === 'A') {
+        const columns = ensure(slide.content.columns, 2);
+        container.innerHTML = field('Titre', 'content.title', slide.content.title) + field('Phrase centrale', 'content.bridge', slide.content.bridge || '');
+        columns.forEach((column, index) => {
+          container.innerHTML += `<div class="field-row">${field(`Colonne ${index + 1} - Libellé`, `content.columns.${index}.label`, column.label, false)}${field(`Colonne ${index + 1} - Introduction`, `content.columns.${index}.intro`, column.intro)}</div>`;
+          ensure(column.bullets, 3).forEach((bullet, bulletIndex) => {
+            container.innerHTML += field(`Colonne ${index + 1} - Puce ${bulletIndex + 1}`, `content.columns.${index}.bullets.${bulletIndex}`, bullet);
+          });
+          container.innerHTML += field(`Colonne ${index + 1} - Mots en gras`, `content.columns.${index}.keywords`, ensure(column.keywords, 0).join(', '), false);
+        });
+      } else if (slide.layout === 'B') {
+        const columns = ensure(slide.content.columns, 3);
+        container.innerHTML = field('Titre', 'content.title', slide.content.title);
+        columns.forEach((column, index) => {
+          container.innerHTML += `<div class="field-row">${field(`Colonne ${index + 1} - Titre`, `content.columns.${index}.header`, column.header, false)}${field(`Colonne ${index + 1} - Texte`, `content.columns.${index}.body`, column.body)}</div>`;
+        });
+      } else {
+        const rows = ensure(slide.content.rows, 4);
+        container.innerHTML = field('Titre', 'content.title', slide.content.title) + field('Sous-titre', 'content.subtitle', slide.content.subtitle);
+        rows.forEach((row, index) => {
+          container.innerHTML += `<div class="field-row">${field(`Ligne ${index + 1} - Icône`, `content.rows.${index}.icon`, row.icon || '.', false)}${field(`Ligne ${index + 1} - Texte`, `content.rows.${index}.text`, row.text)}</div>`;
+        });
+      }
+      bindContentFields(slide);
+    }
+
+    function bindStateFields() {
+      editorPanel.querySelectorAll('[data-path]').forEach(input => {
+        input.addEventListener('input', () => {
+          setPath(presentationState, input.dataset.path, clean(input.value));
+          renderSlideList();
+          renderMiniPreview();
+        });
+      });
+    }
+
+    function bindContentFields(slide) {
+      editorPanel.querySelectorAll('[data-path]').forEach(input => {
+        input.addEventListener('input', () => {
+          setPath(slide, input.dataset.path, clean(input.value));
+          renderSlideList();
+          renderMiniPreview();
+        });
+      });
+    }
+
+    function renderMiniPreview() {
+      const active = getActive();
+      if (active.type === 'title') {
+        miniPreview.innerHTML = `<div class="mini-title"><div class="mini-left">ASCENCE<br>ADVISORY</div><div class="mini-right"><h3>${escapeHtml(presentationState.title || '')}</h3><p>${escapeHtml(presentationState.subtitle || '')}</p><p>${escapeHtml(presentationState.subsubtitle || '')}</p><p>${escapeHtml(presentationState.date || '')}</p></div></div>`;
+      } else if (active.type === 'agenda') {
+        miniPreview.innerHTML = `<div class="mini-agenda"><h3>Agenda</h3><ol>${(presentationState.sections || []).map(section => `<li>${escapeHtml(section.name)}</li>`).join('')}</ol></div>`;
+      } else if (active.type === 'section') {
+        const section = presentationState.sections[active.sectionIndex];
+        miniPreview.innerHTML = `<div class="mini-section"><div class="num">${String(active.sectionIndex + 1).padStart(2, '0')}.</div><h3>${escapeHtml(section.name)}</h3></div>`;
+      } else if (active.type === 'content') {
+        miniPreview.innerHTML = renderMiniContent(active.slide);
+      } else {
+        miniPreview.innerHTML = '<div class="mini-closing"><div>ASCENCE<br>ADVISORY</div></div>';
+      }
+    }
+
+    function renderMiniContent(slide) {
+      const c = slide.content || {};
+      if (slide.layout === 'A') {
+        return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><div class="mini-cols">${ensure(c.columns, 2).map(col => `<div class="mini-box"><div class="mini-label">${escapeHtml(col.label || '')}</div><p>${escapeHtml(col.intro || '')}</p></div>`).join('')}</div></div>`;
+      }
+      if (slide.layout === 'B') {
+        return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><div class="mini-cols">${ensure(c.columns, 3).map(col => `<div class="mini-box"><strong>${escapeHtml(col.header || '')}</strong><p>${escapeHtml(col.body || '')}</p></div>`).join('')}</div></div>`;
+      }
+      return `<div class="mini-content"><h3>${escapeHtml(c.title || '')}</h3><p>${escapeHtml(c.subtitle || '')}</p>${ensure(c.rows, 4).map(row => `<p><strong style="color:var(--maroon)">${escapeHtml(row.icon || '.')}</strong> ${escapeHtml(row.text || '')}</p>`).join('')}</div>`;
+    }
+
+    function getActive() {
+      if (activeKey === 'title') return { type: 'title' };
+      if (activeKey === 'agenda') return { type: 'agenda' };
+      if (activeKey === 'closing') return { type: 'closing' };
+      if (activeKey.startsWith('section:')) return { type: 'section', sectionIndex: Number(activeKey.split(':')[1]) };
+      const key = parseContentKey(activeKey);
+      return {
+        type: 'content',
+        sectionIndex: key.sectionIndex,
+        slideIndex: key.slideIndex,
+        slide: presentationState.sections[key.sectionIndex].slides[key.slideIndex]
+      };
+    }
+
+    function mapContent(content, from, to) {
+      const lines = collectText(content);
+      const title = content.title || lines[0] || 'Slide reformulée';
+      if (to === 'A') {
+        return {
+          title,
+          bridge: lines[1] || 'Ces deux axes structurent les priorités et les décisions opérationnelles à engager.',
+          columns: [0, 1].map(i => ({ label: i === 0 ? 'ÉTAT ACTUEL' : 'CIBLE', intro: lines[i] || '', bullets: lines.slice(2 + i * 3, 5 + i * 3), keywords: [] }))
+        };
+      }
+      if (to === 'B') {
+        return { title, columns: [0, 1, 2].map(i => ({ header: lines[i] || `Thème ${i + 1}`, body: lines[i + 3] || '' })) };
+      }
+      return { title, subtitle: lines[0] || '', rows: [0, 1, 2, 3].map(i => ({ icon: '.', text: lines[i + 1] || '' })).filter((row, index) => row.text || index < 3) };
+    }
+
+    function collectText(value) {
+      const out = [];
+      walk(value, out);
+      return out.map(clean).filter(Boolean);
+    }
+
+    function walk(value, out) {
+      if (typeof value === 'string') out.push(value);
+      else if (Array.isArray(value)) value.forEach(item => walk(item, out));
+      else if (value && typeof value === 'object') Object.values(value).forEach(item => walk(item, out));
+    }
+
+    function field(label, path, value, textarea = true) {
+      if (textarea) return `<label>${escapeHtml(label)}</label><textarea data-path="${escapeHtml(path)}">${escapeHtml(value || '')}</textarea>`;
+      return `<label>${escapeHtml(label)}</label><input data-path="${escapeHtml(path)}" value="${escapeHtml(value || '')}">`;
+    }
+
+    function setPath(root, path, value) {
+      const parts = path.split('.');
+      let cursor = root;
+      while (parts.length > 1) {
+        const part = parts.shift();
+        if (cursor[part] == null) cursor[part] = /^\d+$/.test(parts[0]) ? [] : {};
+        cursor = cursor[part];
+      }
+      cursor[parts[0]] = value;
+      if (parts[0] === 'keywords' && typeof value === 'string') {
+        cursor[parts[0]] = value.split(',').map(item => item.trim()).filter(Boolean);
+      }
+    }
+
+    function parseContentKey(key) {
+      const [, sectionIndex, slideIndex] = key.split(':').map(Number);
+      return { sectionIndex, slideIndex };
+    }
+
+    function ensure(value, count) {
+      const arr = Array.isArray(value) ? value : [];
+      while (arr.length < count) arr.push({});
+      return arr;
+    }
+
+    function iconFor(type) {
+      return { title: 'T', agenda: 'A', section: '#', closing: 'C' }[type] || 'S';
+    }
+
+    function firstLine(value) {
+      return String(value || '').split(/\n/)[0];
+    }
+
+    function clean(value) {
+      return String(value || '').replace(/[\u2013\u2014]/g, '-');
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+
+    function cssEscape(value) {
+      return value.replace(/([:.[\],])/g, '\\$1');
+    }
+  </script>
 </body>
 </html>
